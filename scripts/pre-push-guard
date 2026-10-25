@@ -1,0 +1,37 @@
+#!/bin/bash
+# Pre-push guard: only refs/heads/main may reach the PUBLIC remote.
+#
+# Install with:
+#   cp scripts/pre-push-guard .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+#
+# WHY: the private archive (~/git_archive/accounts.git) holds the pre-scrub
+# history, including the commits that carried config.yaml with the live
+# database password. It is the safety net and must NEVER reach GitHub.
+#
+#   git push --all    pushes refs/heads/*  -- safe on its own.
+#   git push --mirror pushes EVERY ref, including refs/remotes/*, so it
+#                     would publish the archive's secret-bearing lineage.
+#
+# That is a one-keystroke-away leak, so it is blocked structurally rather
+# than left to discipline. Verified: --mirror and an explicit
+# refs/heads/archive-head are both REFUSED; refs/heads/main is allowed.
+#
+# The hook is a LOCAL file (.git/hooks/) and is not version-controlled --
+# it must be re-installed after a fresh clone. scripts/install_hooks.sh
+# does that.
+remote="$1"
+
+case "$remote" in
+  github|gh-peristyle_ai-accounts)
+    while read -r _local_ref _local_sha _remote_ref _remote_sha; do
+      if [ "$_remote_ref" != "refs/heads/main" ]; then
+        echo "REFUSED: pushing '$_remote_ref' to the public remote '$remote'." >&2
+        echo "         Only refs/heads/main may be published. The private" >&2
+        echo "         archive holds the pre-scrub history (including the old" >&2
+        echo "         config.yaml password) and must never be published." >&2
+        exit 1
+      fi
+    done
+    ;;
+esac
+exit 0

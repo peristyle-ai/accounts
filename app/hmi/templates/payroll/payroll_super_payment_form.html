@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}{% if super_payment %}Edit{% else %}New{% endif %} Super Payment — Payroll{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>{% if super_payment %}Edit Super Payment{% else %}Record Super Payment{% endif %}</h2>
+
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-row" style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <div class="form-group" style="flex: 1; min-width: 240px;">
+                <label for="employee_id">Employee *</label>
+                <select id="employee_id" name="employee_id" required>
+                    <option value="">— select —</option>
+                    {% for e in employees %}
+                    <option value="{{ e.id }}">{{ e.preferred_name or e.legal_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label for="remittance_date">Remittance Date *</label>
+                <input type="date" id="remittance_date" name="remittance_date" required>
+            </div>
+            <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label for="amount">Amount *</label>
+                <input type="number" step="0.01" id="amount" name="amount" required value="0.00">
+            </div>
+        </div>
+
+        <div class="form-row" style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <div class="form-group" style="flex: 1; min-width: 240px;">
+                <label for="payment_reference">Payment Reference</label>
+                <input type="text" id="payment_reference" name="payment_reference">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="notes">Notes</label>
+            <textarea id="notes" name="notes" rows="2"></textarea>
+        </div>
+
+        {% if pay_events %}
+        <div class="form-group">
+            <label>Pay events this payment covers</label>
+            <small style="color:#7f8c8d; display:block; margin-bottom: 0.5rem;">
+                Hold Cmd/Ctrl to select multiple. The amount is split evenly across them.
+            </small>
+            <select id="pay_event_ids" name="pay_event_ids" multiple size="6" style="width: 100%;">
+                {% for pe in pay_events %}
+                <option value="{{ pe.id }}">
+                    {{ pe.payment_date.strftime('%Y-%m-%d') }} — ${{ "%.2f"|format(pe.super_payable_amount) }} — {{ pe.bank_reference or 'no ref' }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+
+        <div style="margin-top: 1rem;">
+            <button type="submit" class="btn btn-primary">{% if super_payment %}Update{% else %}Record{% endif %}</button>
+            <a href="{{ url_for('payroll_hmi.payroll_super_payments_list') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<p><a href="{{ url_for('payroll_hmi.payroll_super_payments_list') }}" class="btn btn-secondary">← All super payments</a></p>
+{% endblock %}

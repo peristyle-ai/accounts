@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Accounting System{% endblock %}
+
+{% block content %}
+<h2>Dashboard</h2>
+
+<div class="summary-cards">
+    <div class="summary-card">
+        <h3>Current Quarter GST Owing</h3>
+        <div class="value {% if quarterly_gst_owing >= 0 %}positive{% else %}negative{% endif %}">
+            ${{ "%.2f"|format(quarterly_gst_owing) }}
+        </div>
+        <p style="color: #7f8c8d; margin-top: 0.5rem;">Q{{ current_quarter }} FY {{ fy_year }}</p>
+    </div>
+    <div class="summary-card">
+        <h3>Recent Expenses</h3>
+        <div class="value">{{ recent_expenses|length }}</div>
+        <p style="color: #7f8c8d; margin-top: 0.5rem;">Last 5 expenses</p>
+    </div>
+    <div class="summary-card">
+        <h3>Recent Invoices</h3>
+        <div class="value">{{ recent_invoices|length }}</div>
+        <p style="color: #7f8c8d; margin-top: 0.5rem;">Last 5 invoices</p>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Recent Expenses</h2>
+    {% if recent_expenses %}
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Vendor</th>
+                <th>Description</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for expense in recent_expenses %}
+            <tr>
+                <td>{{ expense.expense_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ expense.vendor_name }}</td>
+                <td>{{ expense.description[:50] }}{% if expense.description|length > 50 %}...{% endif %}</td>
+                <td>${{ "%.2f"|format(expense.total_amount) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No expenses yet. <a href="{{ url_for('hmi.new_expense') }}">Create your first expense</a></p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Recent Invoices</h2>
+    {% if recent_invoices %}
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Client</th>
+                <th>Description</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for invoice in recent_invoices %}
+            <tr>
+                <td>{{ invoice.invoice_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ invoice.client_name }}</td>
+                <td>{{ invoice.description[:50] }}{% if invoice.description|length > 50 %}...{% endif %}</td>
+                <td>${{ "%.2f"|format(invoice.total_amount) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No invoices yet. <a href="{{ url_for('hmi.new_invoice') }}">Create your first invoice</a></p>
+    {% endif %}
+</div>
+{% endblock %}

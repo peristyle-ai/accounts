@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Employees — Payroll{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Employees</h2>
+
+    <form method="GET" class="filter-form">
+        <div class="form-group">
+            <label for="q">Search</label>
+            <input type="text" id="q" name="q" value="{{ search or '' }}" placeholder="Name...">
+        </div>
+        <div class="form-group">
+            <label for="status">Status</label>
+            <select id="status" name="status">
+                <option value="">All</option>
+                <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+                <option value="on_leave" {% if status_filter == 'on_leave' %}selected{% endif %}>On Leave</option>
+                <option value="terminated" {% if status_filter == 'terminated' %}selected{% endif %}>Terminated</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="position">Position</label>
+            <input type="text" id="position" name="position" value="{{ position_filter or '' }}">
+        </div>
+        <button type="submit" class="btn btn-secondary">Filter</button>
+        <a href="{{ url_for('payroll_hmi.payroll_employees_list') }}" class="btn btn-secondary">Clear</a>
+    </form>
+
+    <p>
+        <a href="{{ url_for('payroll_hmi.payroll_employee_new') }}" class="btn btn-primary">+ New Employee</a>
+    </p>
+
+    {% if employees %}
+    <table>
+        <thead>
+            <tr>
+                <th>Legal Name</th>
+                <th>Preferred</th>
+                <th>Position</th>
+                <th>Cycle</th>
+                <th>Default Gross</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in employees %}
+            <tr>
+                <td><a href="{{ url_for('payroll_hmi.payroll_employee_detail', employee_id=e.id) }}">{{ e.legal_name }}</a></td>
+                <td>{{ e.preferred_name or '-' }}</td>
+                <td>{{ e.position or '-' }}</td>
+                <td>{{ e.pay_frequency }}</td>
+                <td>${{ "%.2f"|format(e.default_gross_amount) }}</td>
+                <td>
+                    <span style="
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        background: {% if e.employment_status == 'active' %}#d4edda{% elif e.employment_status == 'on_leave' %}#fff3cd{% else %}#f8d7da{% endif %};
+                        color: {% if e.employment_status == 'active' %}#155724{% elif e.employment_status == 'on_leave' %}#856404{% else %}#721c24{% endif %};
+                    ">{{ e.employment_status }}</span>
+                </td>
+                <td class="actions">
+                    <a href="{{ url_for('payroll_hmi.payroll_employee_edit', employee_id=e.id) }}" class="btn btn-secondary btn-small">Edit</a>
+                    <a href="{{ url_for('payroll_hmi.payroll_pay_event_new', employee_id=e.id) }}" class="btn btn-secondary btn-small">+ Event</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No employees found. <a href="{{ url_for('payroll_hmi.payroll_employee_new') }}">Create your first employee</a>.</p>
+    {% endif %}
+</div>
+
+<p><a href="{{ url_for('payroll_hmi.payroll_summary') }}" class="btn btn-secondary">← Payroll dashboard</a></p>
+{% endblock %}

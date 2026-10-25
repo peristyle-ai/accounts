@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}{{ employee.legal_name }} — Payroll{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>{{ employee.preferred_name or employee.legal_name }}
+        <small style="color:#7f8c8d; font-weight: normal; font-size: 0.7em;">({{ employee.legal_name }})</small>
+    </h2>
+
+    <p>
+        <span style="
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            background: {% if employee.employment_status == 'active' %}#d4edda{% elif employee.employment_status == 'on_leave' %}#fff3cd{% else %}#f8d7da{% endif %};
+            color: {% if employee.employment_status == 'active' %}#155724{% elif employee.employment_status == 'on_leave' %}#856404{% else %}#721c24{% endif %};
+        ">{{ employee.employment_status }}</span>
+        {% if employee.position %}<span style="margin-left: 0.5rem;">{{ employee.position }}</span>{% endif %}
+    </p>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1rem;">
+        <div><strong>Position:</strong> {{ employee.position or '—' }}</div>
+        <div><strong>Pay cycle:</strong> {{ employee.pay_frequency }}</div>
+        <div><strong>Default gross:</strong> ${{ "%.2f"|format(employee.default_gross_amount) }}</div>
+        <div><strong>Start date:</strong> {{ employee.start_date.isoformat() if employee.start_date else '—' }}</div>
+        <div><strong>End date:</strong> {{ employee.end_date.isoformat() if employee.end_date else '—' }}</div>
+        <div><strong>Work email:</strong> {{ employee.email_work or '—' }}</div>
+        <div><strong>Personal email:</strong> {{ employee.email_personal or '—' }}</div>
+        <div><strong>TFN:</strong> {{ employee.tfn }}</div>
+        <div><strong>Super fund:</strong> {{ employee.super_fund_name or '—' }}</div>
+        <div><strong>Super member #:</strong> {{ employee.super_fund_member_no or '—' }}</div>
+        <div><strong>Super rate:</strong> {{ "%.2f"|format(employee.super_rate_pct) }}%</div>
+        <div><strong>BSB:</strong> {{ employee.bank_bsb }}</div>
+        <div><strong>Account #:</strong> {{ employee.bank_account_number }}</div>
+        <div><strong>Bank ref prefix:</strong> {{ employee.bank_reference_prefix or '—' }}</div>
+    </div>
+
+    <div style="margin-top: 1.5rem;">
+        <a href="{{ url_for('payroll_hmi.payroll_employee_edit', employee_id=employee.id) }}" class="btn btn-secondary">Edit</a>
+        <a href="{{ url_for('payroll_hmi.payroll_pay_event_new', employee_id=employee.id) }}" class="btn btn-primary">+ New Pay Event</a>
+        {% if employee.employment_status == 'active' %}
+        <form method="POST" action="{{ url_for('payroll_hmi.payroll_employee_terminate', employee_id=employee.id) }}" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger" onclick="return confirm('Terminate this employee?')">Terminate</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Recent Pay Events (last 12)</h2>
+    {% if pay_events %}
+    <table>
+        <thead>
+            <tr>
+                <th>Payment Date</th>
+                <th>Period</th>
+                <th>Gross</th>
+                <th>PAYG</th>
+                <th>Net</th>
+                <th>Super</th>
+                <th>Bank Ref</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pe in pay_events %}
+            <tr>
+                <td>{{ pe.payment_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ pe.pay_period_start.strftime('%Y-%m-%d') }} – {{ pe.pay_period_end.strftime('%Y-%m-%d') }}</td>
+                <td>${{ "%.2f"|format(pe.gross_amount) }}</td>
+                <td>${{ "%.2f"|format(pe.payg_tax_amount) }}</td>
+                <td>${{ "%.2f"|format(pe.net_amount) }}</td>
+                <td>${{ "%.2f"|format(pe.super_payable_amount) }}</td>
+                <td>{{ pe.bank_reference or '—' }}</td>
+                <td>
+                    <span style="
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        background: {% if pe.status == 'paid' %}#d4edda{% elif pe.status == 'finalized' %}#cce5ff{% elif pe.status == 'cancelled' %}#f8d7da{% else %}#fff3cd{% endif %};
+                        color: {% if pe.status == 'paid' %}#155724{% elif pe.status == 'finalized' %}#004085{% elif pe.status == 'cancelled' %}#721c24{% else %}#856404{% endif %};
+                    ">{{ pe.status }}</span>
+                </td>
+                <td class="actions">
+                    <a href="{{ url_for('payroll_hmi.payroll_pay_event_detail', pay_event_id=pe.id) }}" class="btn btn-secondary btn-small">View</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No pay events yet. <a href="{{ url_for('payroll_hmi.payroll_pay_event_new', employee_id=employee.id) }}">Create the first one</a>.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Super Remittance History (last 12)</h2>
+    {% if super_payments %}
+    <table>
+        <thead>
+            <tr>
+                <th>Remittance Date</th>
+                <th>Amount</th>
+                <th>Covers</th>
+                <th>Reference</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sp in super_payments %}
+            <tr>
+                <td>{{ sp.remittance_date.strftime('%Y-%m-%d') }}</td>
+                <td>${{ "%.2f"|format(sp.amount) }}</td>
+                <td>{{ sp.pay_event_ids|length }} event(s)</td>
+                <td>{{ sp.payment_reference or '—' }}</td>
+                <td>{{ sp.status }}</td>
+                <td class="actions">
+                    <a href="{{ url_for('payroll_hmi.payroll_super_payment_detail', super_payment_id=sp.id) }}" class="btn btn-secondary btn-small">View</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No super remittances recorded. Use <a href="{{ url_for('payroll_hmi.payroll_super_payment_new', employee_id=employee.id) }}">record a super payment</a> after remitting to the fund.</p>
+    {% endif %}
+</div>
+
+<p><a href="{{ url_for('payroll_hmi.payroll_employees_list') }}" class="btn btn-secondary">← All employees</a></p>
+{% endblock %}

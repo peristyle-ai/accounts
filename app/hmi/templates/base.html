@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%232c3e50'/%3E%3Ctext x='50' y='50' font-family='Arial,Helvetica,sans-serif' font-size='70' font-weight='bold' fill='%232ecc71' text-anchor='middle' dominant-baseline='central'%3E%24%3C/text%3E%3C/svg%3E">
+    <title>{% block title %}Accounting System{% endblock %}</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        header {
+            background: #2c3e50;
+            color: white;
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+        }
+        /* Header layout: flexbox so the user-info stays on the same line as
+           the nav even when the nav gets wider (was wrapping to a second
+           line with float/inline-block). 2026-09-17 fix. */
+        header > .container {
+            display: flex;
+            align-items: center;
+            flex-wrap: nowrap;
+            gap: 1rem;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            flex: 1 1 auto;
+            min-width: 0;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        header h1 {
+            margin: 0;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        nav {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin-right: 1.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+        }
+        nav a:hover {
+            background: #34495e;
+        }
+        nav a.active {
+            background: #3498db;
+        }
+        /* Settings dropdown (2026-09-17 refactor — collapses Xero Export,
+           Categories, Activity, API Key under a single menu button so the
+           nav bar fits on one line). Pure <details>/<summary>, no JS. */
+        .nav-dropdown {
+            display: inline-block;
+            position: relative;
+            margin-right: 1.5rem;
+        }
+        .nav-dropdown > summary {
+            color: white;
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            list-style: none;
+            user-select: none;
+        }
+        .nav-dropdown > summary::-webkit-details-marker {
+            display: none;
+        }
+        .nav-dropdown > summary:hover {
+            background: #34495e;
+        }
+        .nav-dropdown[open] > summary,
+        .nav-dropdown > summary.active {
+            background: #3498db;
+        }
+        .nav-dropdown[open] > summary::after {
+            content: ' \25B2';  /* ▲ when open */
+        }
+        .nav-dropdown > summary::after {
+            content: ' \25BC';  /* ▼ when closed */
+            font-size: 0.7em;
+            margin-left: 0.25em;
+        }
+        .nav-dropdown-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 0.25rem;
+            background: white;
+            border-radius: 4px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            min-width: 200px;
+            z-index: 100;
+            padding: 0.5rem 0;
+        }
+        .nav-dropdown-menu a {
+            display: block;
+            color: #2c3e50 !important;
+            padding: 0.5rem 1rem !important;
+            margin: 0 !important;
+            border-radius: 0 !important;
+            text-decoration: none;
+        }
+        .nav-dropdown-menu a:hover {
+            background: #f8f9fa !important;
+            color: #2c3e50 !important;
+        }
+        .nav-dropdown-menu a.active {
+            background: #3498db !important;
+            color: white !important;
+        }
+        .flash-messages {
+            margin-bottom: 1rem;
+        }
+        .flash {
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+        }
+        .flash.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .flash.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .btn {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 1rem;
+        }
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+        .btn-small {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .card h2 {
+            margin-bottom: 1rem;
+            color: #2c3e50;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        form {
+            margin: 0;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        .form-row {
+            display: flex;
+            gap: 1rem;
+        }
+        .form-row .form-group {
+            flex: 1;
+        }
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            margin-top: 1rem;
+            gap: 0.5rem;
+        }
+        .pagination a, .pagination span {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-decoration: none;
+            color: #333;
+        }
+        .pagination a:hover {
+            background: #f8f9fa;
+        }
+        .pagination .active {
+            background: #3498db;
+            color: white;
+            border-color: #3498db;
+        }
+        footer {
+            text-align: center;
+            padding: 2rem 0;
+            color: #7f8c8d;
+            margin-top: 2rem;
+        }
+        .user-info {
+            font-size: 0.875rem;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+        .user-info a {
+            color: #bdc3c7;
+            text-decoration: none;
+        }
+        .user-info a:hover {
+            color: white;
+        }
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .summary-card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .summary-card h3 {
+            color: #7f8c8d;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+        .summary-card .value {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        .summary-card .value.positive {
+            color: #27ae60;
+        }
+        .summary-card .value.negative {
+            color: #e74c3c;
+        }
+        .filter-form {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            display: flex;
+            gap: 1rem;
+            align-items: flex-end;
+        }
+        .filter-form .form-group {
+            margin-bottom: 0;
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            {% if session.get('user_id') %}
+            <div class="header-left">
+                <h1>Accounting System</h1>
+                <nav>
+                    <a href="{{ url_for('hmi.dashboard') }}" {% if request.endpoint == 'hmi.dashboard' %}class="active"{% endif %}>Dashboard</a>
+                    <a href="{{ url_for('hmi.expenses') }}" {% if request.endpoint == 'hmi.expenses' %}class="active"{% endif %}>Expenses</a>
+                    <a href="{{ url_for('hmi.invoices') }}" {% if request.endpoint == 'hmi.invoices' %}class="active"{% endif %}>Invoices</a>
+                    <a href="{{ url_for('payroll_hmi.payroll_summary') }}" {% if request.endpoint == 'payroll_hmi.payroll_summary' %}class="active"{% endif %}>Payroll</a>
+                    <a href="{{ url_for('hmi.reports') }}" {% if request.endpoint == 'hmi.reports' %}class="active"{% endif %}>Reports</a>
+                    {% set settings_endpoints = ['hmi.xero_export_form', 'hmi.account_categories', 'hmi.activity_logs', 'hmi.api_key_management'] %}
+                    <details class="nav-dropdown" {% if request.endpoint in settings_endpoints %}open{% endif %}>
+                        <summary class="{% if request.endpoint in settings_endpoints %}active{% endif %}">Settings</summary>
+                        <div class="nav-dropdown-menu">
+                            <a href="{{ url_for('hmi.xero_export_form') }}" {% if request.endpoint == 'hmi.xero_export_form' %}class="active"{% endif %}>Xero Export</a>
+                            <a href="{{ url_for('hmi.account_categories') }}" {% if request.endpoint == 'hmi.account_categories' %}class="active"{% endif %}>Categories</a>
+                            <a href="{{ url_for('hmi.activity_logs') }}" {% if request.endpoint == 'hmi.activity_logs' %}class="active"{% endif %}>Activity</a>
+                            <a href="{{ url_for('hmi.api_key_management') }}" {% if request.endpoint == 'hmi.api_key_management' %}class="active"{% endif %}>API Key</a>
+                        </div>
+                    </details>
+                </nav>
+            </div>
+            <div class="user-info">
+                {{ session.get('user_email') }}
+                | <a href="{{ url_for('hmi.logout') }}">Logout</a>
+            </div>
+            {% else %}
+            <h1>Accounting System</h1>
+            {% endif %}
+        </div>
+    </header>
+    <main class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-messages">
+            {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+    <footer>
+        <div class="container">
+            Accounting System - Open Source
+        </div>
+    </footer>
+</body>
+</html>

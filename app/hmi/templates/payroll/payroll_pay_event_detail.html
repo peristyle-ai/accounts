@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}Pay Event {{ event.payment_date.strftime('%Y-%m-%d') }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Pay Event — {{ event.payment_date.strftime('%Y-%m-%d') }}</h2>
+    <p>
+        <a href="{{ url_for('payroll_hmi.payroll_employee_detail', employee_id=employee.id) if employee else '#' }}">
+            {{ employee.preferred_name or employee.legal_name if employee else '—' }}
+        </a>
+        <span style="
+            margin-left: 0.5rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            background: {% if event.status == 'paid' %}#d4edda{% elif event.status == 'finalized' %}#cce5ff{% elif event.status == 'cancelled' %}#f8d7da{% else %}#fff3cd{% endif %};
+            color: {% if event.status == 'paid' %}#155724{% elif event.status == 'finalized' %}#004085{% elif event.status == 'cancelled' %}#721c24{% else %}#856404{% endif %};
+        ">{{ event.status }}</span>
+    </p>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
+        <div><strong>Period:</strong> {{ event.pay_period_start.strftime('%Y-%m-%d') }} – {{ event.pay_period_end.strftime('%Y-%m-%d') }}</div>
+        <div><strong>Pay frequency:</strong> {{ event.pay_frequency }}</div>
+        <div><strong>Position:</strong> {{ event.position_snapshot or '—' }}</div>
+        <div><strong>Bank ref:</strong> {{ event.bank_reference or '—' }}</div>
+        <div><strong>Gross:</strong> ${{ "%.2f"|format(event.gross_amount) }}</div>
+        <div><strong>PAYG withheld:</strong> ${{ "%.2f"|format(event.payg_tax_amount) }}</div>
+        <div><strong>Net deposited:</strong> ${{ "%.2f"|format(event.net_amount) }}</div>
+        <div><strong>Super OTE:</strong> ${{ "%.2f"|format(event.super_ote_amount) }}</div>
+        <div><strong>Super payable:</strong> ${{ "%.2f"|format(event.super_payable_amount) }}</div>
+        <div><strong>Super paid:</strong> ${{ "%.2f"|format(event.super_paid_amount) if event.super_paid_amount is not none else '—' }}</div>
+        <div><strong>Super paid date:</strong> {{ event.super_paid_date.isoformat() if event.super_paid_date else '—' }}</div>
+        <div><strong>PDF path:</strong> <code>{{ event.payslip_pdf_path or '—' }}</code></div>
+    </div>
+
+    {% if event.notes %}
+    <p style="margin-top: 1rem;"><strong>Notes:</strong> {{ event.notes }}</p>
+    {% endif %}
+
+    <div style="margin-top: 1.5rem;">
+        {% if event.status == 'draft' %}
+        <a href="{{ url_for('payroll_hmi.payroll_pay_event_edit', pay_event_id=event.id) }}" class="btn btn-secondary">Edit</a>
+        <form method="POST" action="{{ url_for('payroll_api.finalize_pay_event', pay_event_id=event.id) }}" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-primary">Finalize</button>
+        </form>
+        <form method="POST" action="{{ url_for('payroll_api.cancel_pay_event', pay_event_id=event.id) }}" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger" onclick="return confirm('Cancel this event?')">Cancel</button>
+        </form>
+        {% endif %}
+
+        {% if event.status in ('finalized', 'paid') %}
+        <a href="/api/payroll/pay-events/{{ event.id }}/pdf" class="btn btn-secondary" target="_blank">Download PDF</a>
+        <form method="POST" action="{{ url_for('payroll_api.mark_pay_event_paid', pay_event_id=event.id) }}" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if event.status == 'finalized' %}
+            <button type="submit" class="btn btn-primary">Mark Paid</button>
+            {% endif %}
+        </form>
+        <form method="POST" action="{{ url_for('payroll_api.send_payslip', pay_event_id=event.id) }}" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-primary">Send Payslip</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Line Items</h2>
+    {% if lines %}
+    <table>
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Description</th>
+                <th>Quantity</th>
+                <th>Rate</th>
+                <th>Amount</th>
+                <th>Taxable?</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ln in lines %}
+            <tr>
+                <td>{{ ln.line_type }}</td>
+                <td>{{ ln.description or '—' }}</td>
+                <td>{{ ln.quantity or '—' }}</td>
+                <td>{{ ln.rate or '—' }}</td>
+                <td>${{ "%.2f"|format(ln.amount) }}</td>
+                <td>{{ 'Yes' if ln.is_taxable else 'No' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No line items.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Delivery History</h2>
+    {% if deliveries %}
+    <table>
+        <thead>
+            <tr>
+                <th>Sent At</th>
+                <th>Recipient</th>
+                <th>Kind</th>
+                <th>From</th>
+                <th>Status</th>
+                <th>Delivery ID</th>
+                <th>Error</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in deliveries %}
+            <tr>
+                <td>{{ d.sent_at.strftime('%Y-%m-%d %H:%M') if d.sent_at else '—' }}</td>
+                <td>{{ d.recipient_email }}</td>
+                <td>{{ d.recipient_kind }}</td>
+                <td>{{ d.sent_from }}</td>
+                <td>
+                    <span style="
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        background: {% if d.delivery_status == 'sent' or d.delivery_status == 'delivered' %}#d4edda{% elif d.delivery_status == 'failed' or d.delivery_status == 'bounced' %}#f8d7da{% else %}#fff3cd{% endif %};
+                        color: {% if d.delivery_status == 'sent' or d.delivery_status == 'delivered' %}#155724{% elif d.delivery_status == 'failed' or d.delivery_status == 'bounced' %}#721c24{% else %}#856404{% endif %};
+                    ">{{ d.delivery_status }}</span>
+                </td>
+                <td>{{ d.delivery_id or '—' }}</td>
+                <td style="color:#721c24;">{{ d.error_message or '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No emails sent for this pay event yet.</p>
+    {% endif %}
+</div>
+
+<p><a href="{{ url_for('payroll_hmi.payroll_pay_events_list') }}" class="btn btn-secondary">← All pay events</a></p>
+{% endblock %}

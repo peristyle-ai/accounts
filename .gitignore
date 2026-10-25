@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+.env
+
+# Storage (RAG index, ChromaDB, Mem0)
+storage/
+
+# Data files
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Backup directories
+backup_prod_*/
+backups/
+session-ses*
+
+#prompt dumps
+coding_agent/*.txt
+
+*.csv
+
+# ...but the ATO sample fixture is tracked and must stay tracked.
+# It is the reference column list the STP builder is tested against.
+!tests/fixtures/
+!tests/fixtures/*.csv
+
+# Config files with secrets
+config.yaml
+
+# The business's own brand asset - stays on the live deployment, never published.
+# The repo ships the neutral assets/logos/logo-fallback.png instead.
+# Rename your brand asset to match this pattern (e.g. brand-logo.png) and
+# point app.logo_fallback_path in config.yaml at it.
+assets/logos/brand-*.png
+
+# Uploads
+uploads/
+skills/__pycache__/

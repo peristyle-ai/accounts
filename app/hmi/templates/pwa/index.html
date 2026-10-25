@@ -1,0 +1,27 @@
+{% extends "pwa/base.html" %}
+
+{% block title %}Receipt Capture - Home{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Receipt Capture</h1>
+</div>
+<div class="user-info">
+    {{ session.get('pwa_user_email') }}
+    | <a href="{{ url_for('pwa.pwa_logout') }}">Logout</a>
+</div>
+<div class="nav">
+    <a href="{{ url_for('pwa.index') }}">Home</a>
+    <a href="{{ url_for('pwa.capture') }}">Capture</a>
+</div>
+
+<div class="container">
+    <div class="card">
+        <h2>Welcome</h2>
+        <p>Use this app to capture receipts and convert them into expenses.</p>
+        <p style="margin-top: 16px;">
+            <a href="{{ url_for('pwa.capture') }}" class="btn btn-primary">Capture New Receipt</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

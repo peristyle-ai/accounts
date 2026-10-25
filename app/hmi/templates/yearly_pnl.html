@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Yearly P&L Report - Accounting System{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Yearly P&L Report</h2>
+
+    <form method="POST" class="filter-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="year">Financial Year</label>
+            <select id="year" name="year">
+                {% for y in range(2020, 2031) %}
+                <option value="{{ y }}" {% if y == year %}selected{% endif %}>FY {{ y }}/{{ y+1 }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Update</button>
+        <a href="{{ url_for('hmi.reports') }}" class="btn btn-secondary">Back to Reports</a>
+    </form>
+</div>
+
+<div class="card">
+    <h3>Australian Financial Year: {{ start_date.strftime('%Y-%m-%d') }} to {{ end_date.strftime('%Y-%m-%d') }}</h3>
+
+    <div class="summary-cards">
+        <div class="summary-card">
+            <h3>Total Income (Ex GST)</h3>
+            <div class="value positive">${{ "%.2f"|format(total_income_ex_gst) }}</div>
+        </div>
+        <div class="summary-card">
+            <h3>Total Expenses (Ex GST)</h3>
+            <div class="value">${{ "%.2f"|format(total_expenses_ex_gst) }}</div>
+        </div>
+        <div class="summary-card">
+            <h3>Net Profit (Ex GST)</h3>
+            <div class="value {% if net_profit_ex_gst >= 0 %}positive{% else %}negative{% endif %}">
+                ${{ "%.2f"|format(net_profit_ex_gst) }}
+            </div>
+        </div>
+        <div class="summary-card">
+            <h3>Total GST Owing</h3>
+            <div class="value {% if total_gst_owing >= 0 %}positive{% else %}negative{% endif %}">
+                ${{ "%.2f"|format(total_gst_owing) }}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% for qdata in quarterly_data %}
+<div class="card">
+    <h3>Q{{ qdata.quarter }} ({{ qdata.start_date.strftime('%Y-%m-%d') }} to {{ qdata.end_date.strftime('%Y-%m-%d') }})</h3>
+    <table>
+        <tr>
+            <td>Income (Ex GST)</td>
+            <td>${{ "%.2f"|format(qdata.total_income_ex_gst) }}</td>
+        </tr>
+        <tr>
+            <td>Expenses (Ex GST)</td>
+            <td>${{ "%.2f"|format(qdata.total_expenses_ex_gst) }}</td>
+        </tr>
+        <tr>
+            <td>GST Collected</td>
+            <td>${{ "%.2f"|format(qdata.gst_collected) }}</td>
+        </tr>
+        <tr>
+            <td>GST Paid</td>
+            <td>${{ "%.2f"|format(qdata.gst_paid) }}</td>
+        </tr>
+        <tr>
+            <td><strong>GST Owing</strong></td>
+            <td><strong>${{ "%.2f"|format(qdata.gst_owing) }}</strong></td>
+        </tr>
+    </table>
+
+    {% if qdata.invoices %}
+    <h4>Invoices</h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Client</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for invoice in qdata.invoices %}
+            <tr>
+                <td>{{ invoice.invoice_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ invoice.client_name }}</td>
+                <td>${{ "%.2f"|format(invoice.total_amount) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if qdata.expenses %}
+    <h4>Expenses</h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Vendor</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for expense in qdata.expenses %}
+            <tr>
+                <td>{{ expense.expense_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ expense.vendor_name }}</td>
+                <td>${{ "%.2f"|format(expense.total_amount) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

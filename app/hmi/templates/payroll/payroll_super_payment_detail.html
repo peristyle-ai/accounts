@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Super Payment — {{ super_payment.remittance_date.strftime('%Y-%m-%d') }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Super Payment — {{ super_payment.remittance_date.strftime('%Y-%m-%d') }}</h2>
+
+    <p>
+        <a href="{{ url_for('payroll_hmi.payroll_employee_detail', employee_id=employee.id) if employee else '#' }}">
+            {{ employee.preferred_name or employee.legal_name if employee else '—' }}
+        </a>
+        <span style="
+            margin-left: 0.5rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            background: {% if super_payment.status == 'reconciled' %}#d4edda{% elif super_payment.status == 'paid' %}#cce5ff{% else %}#fff3cd{% endif %};
+            color: {% if super_payment.status == 'reconciled' %}#155724{% elif super_payment.status == 'paid' %}#004085{% else %}#856404{% endif %};
+        ">{{ super_payment.status }}</span>
+    </p>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
+        <div><strong>Amount:</strong> ${{ "%.2f"|format(super_payment.amount) }}</div>
+        <div><strong>Fund:</strong> {{ super_payment.fund_name_snapshot or '—' }}</div>
+        <div><strong>Member #:</strong> {{ super_payment.fund_member_snapshot or '—' }}</div>
+        <div><strong>Reference:</strong> {{ super_payment.payment_reference or '—' }}</div>
+        <div><strong>Created:</strong> {{ super_payment.created_at.strftime('%Y-%m-%d %H:%M') if super_payment.created_at else '—' }}</div>
+    </div>
+
+    {% if super_payment.notes %}
+    <p style="margin-top: 1rem;"><strong>Notes:</strong> {{ super_payment.notes }}</p>
+    {% endif %}
+
+    <div style="margin-top: 1.5rem;">
+        {% if super_payment.status == 'pending' %}
+        <form method="POST" action="{{ url_for('payroll_hmi.payroll_super_payment_mark_paid', super_payment_id=super_payment.id) }}" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-primary">Mark Paid</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Covered Pay Events</h2>
+    {% if covered_events %}
+    <table>
+        <thead>
+            <tr>
+                <th>Payment Date</th>
+                <th>Period</th>
+                <th>Super Payable</th>
+                <th>Super Paid</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pe in covered_events %}
+            <tr>
+                <td>{{ pe.payment_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ pe.pay_period_start.strftime('%Y-%m-%d') }} – {{ pe.pay_period_end.strftime('%Y-%m-%d') }}</td>
+                <td>${{ "%.2f"|format(pe.super_payable_amount) }}</td>
+                <td>${{ "%.2f"|format(pe.super_paid_amount) if pe.super_paid_amount is not none else '—' }}</td>
+                <td class="actions">
+                    <a href="{{ url_for('payroll_hmi.payroll_pay_event_detail', pay_event_id=pe.id) }}" class="btn btn-secondary btn-small">View</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No pay events linked to this remittance.</p>
+    {% endif %}
+</div>
+
+<p><a href="{{ url_for('payroll_hmi.payroll_super_payments_list') }}" class="btn btn-secondary">← All super payments</a></p>
+{% endblock %}
