@@ -1,0 +1,23 @@
+# Weekly payroll preparation timer.
+#
+# Schedule: Tuesday 07:00 Brisbane time.
+#
+# Why Tuesday and not Wednesday: the pay week runs Tuesday -> Monday and
+# is paid the following Wednesday. The default period inference in
+# scripts/run_weekly_payroll.py produces the SAME pay week whether it is
+# run on the Tuesday or the Wednesday -- but running it a day early means
+# the wage ABA reaches NAB with a full business day of lead time for the
+# "date to be processed", which is what NAB's Direct Entry requires.
+#
+# Monday is deliberately not used: the inference would return the
+# PREVIOUS pay week on a Monday.
+[Unit]
+Description=Weekly payroll preparation for Sample Employee (Tue 07:00 AEST)
+
+[Timer]
+OnCalendar=Tue *-*-* 07:00:00 Australia/Brisbane
+Persistent=true
+Unit=weekly-payroll.service
+
+[Install]
+WantedBy=timers.target

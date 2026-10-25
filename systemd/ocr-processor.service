@@ -1,0 +1,25 @@
+[Unit]
+Description=OCR Queue Processor for Receipt Scanning (tesseract pipeline)
+After=postgresql.service network-online.target
+Wants=postgresql.service network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+Environment="PATH=%h/accounts/venv/bin:/usr/local/bin:/usr/bin:/bin"
+# Secrets + service URLs live in ~/.env (DB_*, MAIL_SERVER_API, etc).
+# EnvironmentFile= is read after the inline Environment= lines.
+EnvironmentFile=-%h/.env
+WorkingDirectory=%h/accounts
+# The OCR processor runs tesseract + a local regex parser, offline.
+# Low-confidence parses are queued for manual review by an operating
+# agent (via the API); there is no model server to point at.
+ExecStart=%h/accounts/venv/bin/python3 %h/accounts/processes/ocr_processor.py --config %h/accounts/config.yaml --poll-interval 5 --max-attempts 3
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

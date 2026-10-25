@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Pay Events — Payroll{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Pay Events</h2>
+
+    <form method="GET" class="filter-form">
+        <div class="form-group">
+            <label for="employee_id">Employee</label>
+            <select id="employee_id" name="employee_id">
+                <option value="">All</option>
+                {% for e in employees %}
+                <option value="{{ e.id }}" {% if employee_filter == e.id %}selected{% endif %}>
+                    {{ e.preferred_name or e.legal_name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="start_date">From</label>
+            <input type="date" id="start_date" name="start_date" value="{{ request.args.get('start_date', '') }}">
+        </div>
+        <div class="form-group">
+            <label for="end_date">To</label>
+            <input type="date" id="end_date" name="end_date" value="{{ request.args.get('end_date', '') }}">
+        </div>
+        <div class="form-group">
+            <label for="status">Status</label>
+            <select id="status" name="status">
+                <option value="">All</option>
+                <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Draft</option>
+                <option value="finalized" {% if status_filter == 'finalized' %}selected{% endif %}>Finalized</option>
+                <option value="paid" {% if status_filter == 'paid' %}selected{% endif %}>Paid</option>
+                <option value="cancelled" {% if status_filter == 'cancelled' %}selected{% endif %}>Cancelled</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-secondary">Filter</button>
+        <a href="{{ url_for('payroll_hmi.payroll_pay_events_list') }}" class="btn btn-secondary">Clear</a>
+    </form>
+
+    <p>
+        <a href="{{ url_for('payroll_hmi.payroll_pay_event_new') }}" class="btn btn-primary">+ New Pay Event</a>
+    </p>
+
+    {% if events %}
+    <table>
+        <thead>
+            <tr>
+                <th>Payment Date</th>
+                <th>Employee</th>
+                <th>Period</th>
+                <th>Gross</th>
+                <th>PAYG</th>
+                <th>Net</th>
+                <th>Super</th>
+                <th>Bank Ref</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pe in events %}
+            <tr>
+                <td>{{ pe.payment_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ pe._employee.preferred_name or pe._employee.legal_name if pe._employee else '—' }}</td>
+                <td>{{ pe.pay_period_start.strftime('%Y-%m-%d') }} – {{ pe.pay_period_end.strftime('%Y-%m-%d') }}</td>
+                <td>${{ "%.2f"|format(pe.gross_amount) }}</td>
+                <td>${{ "%.2f"|format(pe.payg_tax_amount) }}</td>
+                <td>${{ "%.2f"|format(pe.net_amount) }}</td>
+                <td>${{ "%.2f"|format(pe.super_payable_amount) }}</td>
+                <td>{{ pe.bank_reference or '—' }}</td>
+                <td>
+                    <span style="
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        background: {% if pe.status == 'paid' %}#d4edda{% elif pe.status == 'finalized' %}#cce5ff{% elif pe.status == 'cancelled' %}#f8d7da{% else %}#fff3cd{% endif %};
+                        color: {% if pe.status == 'paid' %}#155724{% elif pe.status == 'finalized' %}#004085{% elif pe.status == 'cancelled' %}#721c24{% else %}#856404{% endif %};
+                    ">{{ pe.status }}</span>
+                </td>
+                <td class="actions">
+                    <a href="{{ url_for('payroll_hmi.payroll_pay_event_detail', pay_event_id=pe.id) }}" class="btn btn-secondary btn-small">View</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No pay events found.</p>
+    {% endif %}
+</div>
+
+<p><a href="{{ url_for('payroll_hmi.payroll_summary') }}" class="btn btn-secondary">← Payroll dashboard</a></p>
+{% endblock %}

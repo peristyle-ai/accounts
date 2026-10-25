@@ -1,0 +1,100 @@
+# config.yaml.example - template for the accounts app.
+#
+# Copy this file to `config.yaml` and fill in your own values:
+#
+#     cp config.yaml.example config.yaml
+#
+# `config.yaml` is git-ignored and must NEVER be committed: it can contain
+# credentials. Every value below is a placeholder.
+#
+# ENVIRONMENT VARIABLES TAKE PRIORITY for the credentials (DB_*,
+# SECRET_KEY, MAIL_*, PAYROLL_PII_KEY - see .env.example). Leave the
+# password commented out below so the app reads it from the environment
+# instead of from this file. If you DO set a password here, the app will
+# build its database URL from this file and ignore DB_* entirely.
+
+database:
+  host: "localhost"
+  port: 5432
+  name: accounts
+  user: accounts_app
+  # password: ""            # <- leave commented out; set DB_PASSWORD instead
+
+  # The PostgreSQL schema the accounts tables live in. Leave this as
+  # 'public' for a standalone install -- that is what a fresh checkout
+  # gets and it needs no extra steps.
+  #
+  # Set it (and the ACCOUNTS_SCHEMA env var, which takes priority) to
+  # install the accounts tables into a dedicated schema instead, e.g. when
+  # this app shares a database with other applications. When you do that,
+  # create the schema and install the DDL with:
+  #
+  #     python3 init_db.py --mode=schema
+  #
+  schema: public            # ACCOUNTS_SCHEMA equivalent (default: 'public')
+
+  # The auth table the app reads and writes. A fully-qualified table name
+  # means init_db.py will NOT create a `users` table for you -- it must
+  # already exist, with at least the columns id, email and password_hash.
+  # Leave it unset to let the app own <schema>.users.
+  # Mirrors the USERS_TABLE env var (env wins).
+  # users_table: public.users
+
+app:
+  host: "127.0.0.1"
+  api_port: 5061
+  hmi_port: 5062
+  # Flask session signing key. Generate with:
+  #   python3 -c "import secrets; print(secrets.token_hex(32))"
+  # Set SECRET_KEY in .env instead of here if you prefer.
+  secret_key: "change-me-generate-a-random-32-byte-hex-key"
+  upload_folder: "uploads"
+  # Seed logo used on invoices when a business's uploaded logo file is
+  # missing. Point this at a logo you have the right to ship.
+  logo_fallback_path: "assets/logos/logo-fallback.png"
+  max_content_length: 10485760
+
+accounting:
+  default_gst_type: 0.1
+  financial_year_start_month: 7
+  financial_year_start_day: 1
+  financial_year_end_month: 6
+  financial_year_end_day: 30
+
+# Single Touch Payroll (ATO) reporting config.
+# Portal: https://portal.singletouch.com.au
+#
+# Every identifier here is issued to a specific employer by the ATO.
+# They are empty in this template on purpose - fill them in from your own
+# ATO correspondence, never copy them from another business.
+stp:
+  # Business Management System ID (ATO-issued)
+  bms_id: ""
+
+  # Payroll product identifier (issued by the ATO for your payroll area)
+  product_id: ""
+
+  # Payroll area - typically the business name as registered with the ATO
+  payroll_area: ""
+  # Payroll area type - leave empty unless the ATO instructs otherwise
+  payroll_area_type: ""
+
+  # Employer ABN (11 digits, no spaces) - as registered with the ATO
+  entity_abn: ""
+
+  # Branch ID within the payroll system
+  branch_id: "1"
+
+  # Previous BMS ID - only for employers migrated from another system
+  previous_bms_id: ""
+
+  # Time component of "Payrun date time" (D/MM/YYYY HH:MM)
+  payrun_time: "00:00"
+
+  # Income stream code - SAW = Salary and Wages
+  income_stream_code: "SAW"
+  # Income stream country code (2-letter, matches the Country column)
+  income_stream_country_code: "au"
+
+  # Final EOY pay indicator - N = not the final pay period of the FY
+  final_eoy_pay_indicator: "N"

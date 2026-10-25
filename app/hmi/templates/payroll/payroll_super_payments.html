@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Super Payments — Payroll{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Super Payments</h2>
+
+    <p>
+        <a href="{{ url_for('payroll_hmi.payroll_super_payment_new') }}" class="btn btn-primary">+ Record Super Payment</a>
+    </p>
+
+    {% if super_payments %}
+    <table>
+        <thead>
+            <tr>
+                <th>Remittance Date</th>
+                <th>Employee</th>
+                <th>Fund</th>
+                <th>Amount</th>
+                <th>Covers</th>
+                <th>Reference</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sp in super_payments %}
+            <tr>
+                <td>{{ sp.remittance_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ sp._employee.preferred_name or sp._employee.legal_name if sp._employee else '—' }}</td>
+                <td>{{ sp.fund_name_snapshot or '—' }}</td>
+                <td>${{ "%.2f"|format(sp.amount) }}</td>
+                <td>{{ sp.pay_event_ids|length }} event(s)</td>
+                <td>{{ sp.payment_reference or '—' }}</td>
+                <td>{{ sp.status }}</td>
+                <td class="actions">
+                    <a href="{{ url_for('payroll_hmi.payroll_super_payment_detail', super_payment_id=sp.id) }}" class="btn btn-secondary btn-small">View</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No super payments recorded yet.</p>
+    {% endif %}
+</div>
+
+<p><a href="{{ url_for('payroll_hmi.payroll_summary') }}" class="btn btn-secondary">← Payroll dashboard</a></p>
+{% endblock %}

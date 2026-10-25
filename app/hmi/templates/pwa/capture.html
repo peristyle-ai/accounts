@@ -1,0 +1,57 @@
+{% extends "pwa/base.html" %}
+
+{% block title %}Capture Receipt{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Receipt Capture</h1>
+</div>
+<div class="user-info">
+    {{ session.get('pwa_user_email') }}
+    | <a href="{{ url_for('pwa.pwa_logout') }}">Logout</a>
+</div>
+<div class="nav">
+    <a href="{{ url_for('pwa.index') }}">Home</a>
+    <a href="{{ url_for('pwa.capture') }}">Capture</a>
+</div>
+
+<div class="container">
+    <div class="card">
+        <h2>Capture Receipt</h2>
+        <p>Take a photo or upload a receipt image. The details will be extracted automatically via OCR.</p>
+
+        <form method="POST" action="{{ url_for('pwa.upload') }}" enctype="multipart/form-data" id="receiptForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <label>Receipt Photo</label>
+                <input type="file" id="fileInput" name="file" accept="image/*" capture="environment" style="display: none;">
+                <button type="button" class="btn btn-primary" id="captureBtn" onclick="document.getElementById('fileInput').click()">
+                    Take Photo
+                </button>
+                <img id="preview" style="display: none; width: 100%; margin-top: 12px; border-radius: 8px;">
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="submitBtn" disabled>Upload Receipt</button>
+        </form>
+    </div>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const preview = document.getElementById('preview');
+    const submitBtn = document.getElementById('submitBtn');
+
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                preview.src = event.target.result;
+                preview.style.display = 'block';
+                submitBtn.disabled = false;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+</script>
+{% endblock %}

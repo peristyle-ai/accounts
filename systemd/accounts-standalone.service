@@ -1,0 +1,25 @@
+[Unit]
+Description=Python PostgreSQL Accounting System
+After=postgresql.service network-online.target
+Wants=postgresql.service network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+Environment="PATH=%h/accounts/venv/bin:/usr/local/bin:/usr/bin:/bin"
+# Secrets live in ~/.env (DB_PASSWORD, SECRET_KEY, MAIL_SERVER_PASSWORD,
+# PAYROLL_PII_KEY, etc). Mode 0600 on the file. EnvironmentFile= is read
+# after the inline Environment= lines so the file can override them.
+EnvironmentFile=-%h/.env
+WorkingDirectory=%h/accounts
+# --host defaults to 127.0.0.1 (see run.py --help). Override with API_HOST
+# in ~/.env if you need to bind on a LAN address.
+ExecStart=%h/accounts/venv/bin/python3 run.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

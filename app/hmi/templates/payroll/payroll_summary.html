@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Payroll — Accounting System{% endblock %}
+
+{% block content %}
+<h2>Payroll — FY {{ fy_year }}</h2>
+<p style="color: #7f8c8d; margin-top: -0.5rem; margin-bottom: 1.5rem;">
+    Period: {{ fy_start.strftime('%Y-%m-%d') }} → {{ fy_end.strftime('%Y-%m-%d') }}
+    (Australian FY — Jul to Jun)
+</p>
+
+<div class="summary-cards">
+    <div class="summary-card">
+        <h3>YTD Gross</h3>
+        <div class="value positive">${{ "%.2f"|format(ytd_gross) }}</div>
+        <p style="color: #7f8c8d; margin-top: 0.5rem;">FY {{ fy_year }} payroll (pre-tax)</p>
+    </div>
+    <div class="summary-card">
+        <h3>YTD PAYG Withheld</h3>
+        <div class="value">${{ "%.2f"|format(ytd_payg) }}</div>
+        <p style="color: #7f8c8d; margin-top: 0.5rem;">To remit to ATO</p>
+    </div>
+    <div class="summary-card">
+        <h3>YTD Net Paid</h3>
+        <div class="value">${{ "%.2f"|format(ytd_net) }}</div>
+        <p style="color: #7f8c8d; margin-top: 0.5rem;">After PAYG</p>
+    </div>
+    <div class="summary-card">
+        <h3>Super Outstanding</h3>
+        <div class="value {% if super_outstanding > 0 %}negative{% else %}positive{% endif %}">
+            ${{ "%.2f"|format(super_outstanding) }}
+        </div>
+        <p style="color: #7f8c8d; margin-top: 0.5rem;">
+            ${{ "%.2f"|format(super_paid) }} paid · ${{ "%.2f"|format(super_payable) }} payable
+        </p>
+    </div>
+</div>
+
+<div class="card">
+    <h2>By Employee</h2>
+    {% if by_employee %}
+    <table>
+        <thead>
+            <tr>
+                <th>Employee</th>
+                <th>Position</th>
+                <th>YTD Gross</th>
+                <th>YTD Super Paid</th>
+                <th>Events</th>
+                <th>Last Paid</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in by_employee %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('payroll_hmi.payroll_employee_detail', employee_id=row.employee.id) }}">
+                        {{ row.employee.preferred_name or row.employee.legal_name }}
+                    </a>
+                </td>
+                <td>{{ row.employee.position or '-' }}</td>
+                <td>${{ "%.2f"|format(row.ytd_gross) }}</td>
+                <td>${{ "%.2f"|format(row.ytd_super_paid) }}</td>
+                <td>{{ row.pay_event_count }}</td>
+                <td>{{ row.last_payment_date.strftime('%Y-%m-%d') if row.last_payment_date else '-' }}</td>
+                <td class="actions">
+                    <a href="{{ url_for('payroll_hmi.payroll_pay_event_new', employee_id=row.employee.id) }}" class="btn btn-secondary btn-small">+ Event</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No payroll activity yet for FY {{ fy_year }}.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Recent Pay Events</h2>
+    {% if recent_events %}
+    <table>
+        <thead>
+            <tr>
+                <th>Payment Date</th>
+                <th>Employee</th>
+                <th>Period</th>
+                <th>Gross</th>
+                <th>Net</th>
+                <th>Super</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pe in recent_events %}
+            <tr>
+                <td>{{ pe.payment_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ pe._employee.preferred_name or pe._employee.legal_name if pe._employee else '—' }}</td>
+                <td>{{ pe.pay_period_start.strftime('%Y-%m-%d') }} – {{ pe.pay_period_end.strftime('%Y-%m-%d') }}</td>
+                <td>${{ "%.2f"|format(pe.gross_amount) }}</td>
+                <td>${{ "%.2f"|format(pe.net_amount) }}</td>
+                <td>${{ "%.2f"|format(pe.super_payable_amount) }}</td>
+                <td>
+                    <span style="
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        background: {% if pe.status == 'paid' %}#d4edda{% elif pe.status == 'finalized' %}#cce5ff{% elif pe.status == 'cancelled' %}#f8d7da{% else %}#fff3cd{% endif %};
+                        color: {% if pe.status == 'paid' %}#155724{% elif pe.status == 'finalized' %}#004085{% elif pe.status == 'cancelled' %}#721c24{% else %}#856404{% endif %};
+                    ">{{ pe.status }}</span>
+                </td>
+                <td class="actions">
+                    <a href="{{ url_for('payroll_hmi.payroll_pay_event_detail', pay_event_id=pe.id) }}" class="btn btn-secondary btn-small">View</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No pay events yet. <a href="{{ url_for('payroll_hmi.payroll_employee_new') }}">Add your first employee</a>.</p>
+    {% endif %}
+    {% if recent_events %}
+    <p style="margin-top: 1rem;">
+        <a href="{{ url_for('payroll_hmi.payroll_pay_events_list') }}" class="btn btn-secondary">View all pay events →</a>
+    </p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Recent Deliveries</h2>
+    {% if recent_deliveries %}
+    <table>
+        <thead>
+            <tr>
+                <th>Sent</th>
+                <th>Employee</th>
+                <th>Recipient</th>
+                <th>Status</th>
+                <th>Subject</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in recent_deliveries %}
+            <tr>
+                <td>{{ d.sent_at.strftime('%Y-%m-%d %H:%M') if d.sent_at else '-' }}</td>
+                <td>{{ d._employee.preferred_name or d._employee.legal_name if d._employee else '—' }}</td>
+                <td>{{ d.recipient_email }}</td>
+                <td>
+                    <span style="
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-size: 0.85em;
+                        background: {% if d.delivery_status == 'sent' or d.delivery_status == 'delivered' %}#d4edda{% elif d.delivery_status == 'failed' or d.delivery_status == 'bounced' %}#f8d7da{% else %}#fff3cd{% endif %};
+                        color: {% if d.delivery_status == 'sent' or d.delivery_status == 'delivered' %}#155724{% elif d.delivery_status == 'failed' or d.delivery_status == 'bounced' %}#721c24{% else %}#856404{% endif %};
+                    ">{{ d.delivery_status }}</span>
+                </td>
+                <td>
+                    <a href="{{ url_for('payroll_hmi.payroll_pay_event_detail', pay_event_id=d.pay_event_id) }}">
+                        {{ (d.subject or '')[:60] }}{% if d.subject and d.subject|length > 60 %}…{% endif %}
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No payslip emails sent yet. Use <em>Mark paid</em> → <em>Send payslip</em> on a pay event to dispatch.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Quick Links</h2>
+    <p>
+        <a href="{{ url_for('payroll_hmi.payroll_employees_list') }}" class="btn btn-primary">Employees</a>
+        <a href="{{ url_for('payroll_hmi.payroll_pay_events_list') }}" class="btn btn-primary">Pay Events</a>
+        <a href="{{ url_for('payroll_hmi.payroll_super_payments_list') }}" class="btn btn-primary">Super Payments</a>
+        <a href="{{ url_for('payroll_hmi.payroll_exports') }}" class="btn btn-primary">Exports (ABA + Super)</a>
+        <a href="{{ url_for('payroll_hmi.payroll_employee_new') }}" class="btn btn-secondary">+ New Employee</a>
+    </p>
+</div>
+{% endblock %}

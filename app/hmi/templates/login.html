@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Accounting System{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 400px; margin: 4rem auto;">
+    <h2>Login</h2>
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required>
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%;">Login</button>
+    </form>
+    <p style="margin-top: 1rem; text-align: center;">
+        Accounts are created by the administrator of this deployment.
+    </p>
+</div>
+{% endblock %}

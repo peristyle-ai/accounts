@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Activity Logs - Accounting System{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Activity Logs</h2>
+
+    {% if logs.items %}
+    <table>
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Action</th>
+                <th>Table</th>
+                <th>Record ID</th>
+                <th>IP Address</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs.items %}
+            <tr>
+                <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                <td>{{ log.action }}</td>
+                <td>{{ log.table_name }}</td>
+                <td>{{ log.record_id[:8] }}...</td>
+                <td>{{ log.ip_address or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="pagination">
+        {% if logs.has_prev %}
+        <a href="{{ url_for('hmi.activity_logs', page=logs.prev_num) }}">&laquo; Previous</a>
+        {% endif %}
+
+        {% for p in range(1, logs.pages + 1) %}
+        {% if p == logs.page %}
+        <span class="active">{{ p }}</span>
+        {% elif p <= logs.page + 5 and p >= logs.page - 5 %}
+        <a href="{{ url_for('hmi.activity_logs', page=p) }}">{{ p }}</a>
+        {% endif %}
+        {% endfor %}
+
+        {% if logs.has_next %}
+        <a href="{{ url_for('hmi.activity_logs', page=logs.next_num) }}">Next &raquo;</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <p>No activity logs yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

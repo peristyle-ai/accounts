@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Payroll Exports - Accounting System{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Payroll Exports</h2>
+    <p style="margin-bottom: 1rem; color: #7f8c8d;">
+        Generate the files your bank and super fund need. Both downloads are
+        filtered by <strong>status</strong> (default: <code>finalized</code>
+        = pay events that have been raised but not yet marked paid) plus an
+        optional date range.
+    </p>
+    <p style="margin-bottom: 1rem; color: #7f8c8d;">
+        <a href="{{ url_for('payroll_hmi.payroll_pay_events_list') }}">View pay events →</a>
+        &nbsp;|&nbsp;
+        <a href="{{ url_for('payroll_hmi.payroll_dashboard') }}">Payroll dashboard →</a>
+    </p>
+</div>
+
+<div class="card">
+    <h3>Filter</h3>
+    <form method="GET" class="filter-form">
+        <div class="form-group">
+            <label for="status">Status</label>
+            <select id="status" name="status">
+                <option value="finalized" {% if statuses_raw == 'finalized' %}selected{% endif %}>Finalized only (pending payroll)</option>
+                <option value="draft,finalized" {% if statuses_raw == 'draft,finalized' %}selected{% endif %}>Draft + finalized</option>
+                <option value="draft,finalized,paid" {% if statuses_raw == 'draft,finalized,paid' %}selected{% endif %}>All (including paid)</option>
+                <option value="paid" {% if statuses_raw == 'paid' %}selected{% endif %}>Paid only (re-issue a past export)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="from_date">From</label>
+            <input type="date" id="from_date" name="from_date" value="{{ from_date }}">
+        </div>
+        <div class="form-group">
+            <label for="to_date">To</label>
+            <input type="date" id="to_date" name="to_date" value="{{ to_date }}">
+        </div>
+        <div class="form-group" style="flex: 0 0 auto;">
+            <label>&nbsp;</label>
+            <button type="submit" class="btn btn-primary">Update</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h3>Preview</h3>
+    <p style="color: #7f8c8d; margin-bottom: 1rem;">
+        {{ pay_event_count }} pay event(s) for {{ distinct_employees }} employee(s).
+    </p>
+    <table>
+        <tr><th>Total gross</th><td>${{ "%.2f"|format(total_gross) }}</td></tr>
+        <tr><th>Total net</th><td>${{ "%.2f"|format(total_net) }}</td></tr>
+        <tr><th>Total super payable</th><td>${{ "%.2f"|format(total_super) }}</td></tr>
+    </table>
+</div>
+
+{% if not has_business_bank %}
+<div class="card" style="background: #fff3cd; border-left: 4px solid #ffc107;">
+    <h3 style="color: #856404;">⚠️ Business bank details missing</h3>
+    <p>ABA file generation needs the business's bank BSB and account number.
+    Update via <a href="{{ url_for('hmi.api_key_management') }}">Settings → API Key</a>
+    (the same form also has the business address / bank fields) — or
+    <code>PUT /api/auth/business</code> with <code>bsb</code>, <code>account_number</code>,
+    <code>account_name</code>, <code>bank_name</code>.</p>
+</div>
+{% endif %}
+
+<div class="card">
+    <h3>1. ABA file (bulk payment)</h3>
+    <p style="color: #7f8c8d; margin-bottom: 1rem;">
+        APCA / Cemtext format. 120-char fixed-width records, CRLF terminated.
+        Upload via your bank's bulk payment (direct entry) facility.
+    </p>
+    <form method="GET" action="/api/exports/payroll/aba" class="filter-form">
+        <input type="hidden" name="status" value="{{ statuses_raw }}">
+        {% if from_date %}<input type="hidden" name="from_date" value="{{ from_date }}">{% endif %}
+        {% if to_date %}<input type="hidden" name="to_date" value="{{ to_date }}">{% endif %}
+        <div class="form-group">
+            <label for="process_date">Process date</label>
+            <input type="date" id="process_date" name="process_date" value="{{ process_date }}">
+            <small style="color: #7f8c8d;">Date the bank should release the payments. Most banks need ≥1 business day lead time.</small>
+        </div>
+        <div class="form-group" style="flex: 0 0 auto;">
+            <label>&nbsp;</label>
+            <button type="submit" class="btn btn-primary" {% if not has_business_bank %}disabled{% endif %}>
+                Download .aba
+            </button>
+        </div>
+    </form>
+    {% if employees_missing_bank > 0 %}
+    <p style="color: #856404; margin-top: 0.5rem;">
+        ⚠️ {{ employees_missing_bank }} pay event(s) reference employees without bank details.
+        Those rows will be skipped.
+    </p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h3>2. Super contributions CSV</h3>
+    <p style="color: #7f8c8d; margin-bottom: 1rem;">
+        One row per pay event, in the column format your super fund's employer
+        portal expects. Upload via your fund's employer portal. If the column
+        headers don't match the portal, the fix is in
+        <code>app/shared/super_csv.py</code> or
+        <code>app/shared/mapped_csv.py</code>.
+    </p>
+    <a href="/api/exports/payroll/super-csv?{{ super_query_string }}"
+       class="btn btn-primary">
+        Download .csv
+    </a>
+    {% if employees_missing_super > 0 %}
+    <p style="color: #856404; margin-top: 0.5rem;">
+        ⚠️ {{ employees_missing_super }} pay event(s) reference employees without
+        a super fund member number. Those rows will be skipped.
+    </p>
+    {% endif %}
+</div>
+
+{% endblock %}
