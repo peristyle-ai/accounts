@@ -1,0 +1,40 @@
+# Weekly payroll preparation for Sample Employee.
+#
+# Runs the "prepare" phase of scripts/run_weekly_payroll.py: creates (or
+# reuses) the pay event for the week that ended the previous Monday,
+# generates every upload file -- the wage ABA, the super ABA, the
+# AustralianSuper mapped CSV and the STP CSV -- and emails them to
+# the operator for upload.
+#
+# It deliberately does NOT mark the pay event paid and does NOT email
+# the payslip to Sample Employee. Those happen in the "complete" phase once the
+# bank transfer has actually cleared, so an un-paid week can never be
+# recorded as paid by a timer.
+#
+# The script loads its own environment (accounts repo .env for the
+# database, the operating agent's workspace .env for the accounts API key and the mail
+# server), so no EnvironmentFile= is needed here beyond the standard
+# defaults.
+#
+# Installed to ~/.config/systemd/user/ and enabled with:
+#   systemctl --user enable --now weekly-payroll.timer
+[Unit]
+Description=Weekly payroll preparation (Sample Employee) - generate upload files
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/accounts
+# Absolute paths for both the interpreter and the script. A relative
+# script path silently depends on WorkingDirectory -- verified by
+# systemd-run --user, which does NOT set it and failed with
+# "can't open file '/opt/accounts/scripts/run_weekly_payroll.py'".
+ExecStart=/opt/accounts/.venv/bin/python3 /opt/accounts/scripts/run_weekly_payroll.py --phase prepare
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=weekly-payroll
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

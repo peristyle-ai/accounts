@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - Accounting System{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Reports</h2>
+
+    <div class="summary-cards">
+        <div class="summary-card">
+            <h3>Monthly P&L Report</h3>
+            <p>Profit & Loss for any given month</p>
+            <a href="{{ url_for('hmi.monthly_report') }}" class="btn btn-primary">Generate Monthly Report</a>
+        </div>
+        <div class="summary-card">
+            <h3>Quarterly BAS Report</h3>
+            <p>Generate GST summary for Business Activity Statement</p>
+            <a href="{{ url_for('hmi.quarterly_bas') }}" class="btn btn-primary">Generate Quarterly Report</a>
+        </div>
+        <div class="summary-card">
+            <h3>Yearly P&L Report</h3>
+            <p>Profit & Loss for Australian Financial Year (Jul-Jun)</p>
+            <a href="{{ url_for('hmi.yearly_pnl') }}" class="btn btn-primary">Generate Yearly Report</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

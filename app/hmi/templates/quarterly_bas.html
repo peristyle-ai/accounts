@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}Quarterly BAS Report - Accounting System{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Quarterly BAS Report</h2>
+
+    <form method="POST" class="filter-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="year">Financial Year</label>
+            <select id="year" name="year">
+                {% for y in range(2020, 2031) %}
+                <option value="{{ y }}" {% if y == year %}selected{% endif %}>FY {{ y }}/{{ y+1 }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="quarter">Quarter</label>
+            <select id="quarter" name="quarter">
+                <option value="1" {% if quarter == 1 %}selected{% endif %}>Q1 (Jul-Sep)</option>
+                <option value="2" {% if quarter == 2 %}selected{% endif %}>Q2 (Oct-Dec)</option>
+                <option value="3" {% if quarter == 3 %}selected{% endif %}>Q3 (Jan-Mar)</option>
+                <option value="4" {% if quarter == 4 %}selected{% endif %}>Q4 (Apr-Jun)</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Update</button>
+        <a href="{{ url_for('hmi.reports') }}" class="btn btn-secondary">Back to Reports</a>
+    </form>
+</div>
+
+<div class="card">
+    <h3>Period: {{ start_date.strftime('%Y-%m-%d') }} to {{ end_date.strftime('%Y-%m-%d') }}</h3>
+
+    <div class="summary-cards">
+        <div class="summary-card">
+            <h3>GST Collected</h3>
+            <div class="value positive">${{ "%.2f"|format(total_gst_collected) }}</div>
+        </div>
+        <div class="summary-card">
+            <h3>GST Paid</h3>
+            <div class="value negative">${{ "%.2f"|format(total_gst_paid) }}</div>
+        </div>
+        <div class="summary-card">
+            <h3>GST Owing</h3>
+            <div class="value {% if gst_owing >= 0 %}positive{% else %}negative{% endif %}">
+                ${{ "%.2f"|format(gst_owing) }}
+            </div>
+        </div>
+    </div>
+
+    <h3>Summary</h3>
+    <table>
+        <tr>
+            <td>Total Income (Ex GST)</td>
+            <td>${{ "%.2f"|format(total_income_ex_gst) }}</td>
+        </tr>
+        <tr>
+            <td>Total Expenses (Ex GST)</td>
+            <td>${{ "%.2f"|format(total_expenses_ex_gst) }}</td>
+        </tr>
+    </table>
+</div>
+
+{% if invoices %}
+<div class="card">
+    <h3>Invoices in Period</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Client</th>
+                <th>Ex GST</th>
+                <th>GST</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for invoice in invoices %}
+            <tr>
+                <td>{{ invoice.invoice_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ invoice.client_name }}</td>
+                <td>${{ "%.2f"|format(invoice.ex_gst_amount) }}</td>
+                <td>${{ "%.2f"|format(invoice.gst_amount) }}</td>
+                <td>${{ "%.2f"|format(invoice.total_amount) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if expenses %}
+<div class="card">
+    <h3>Expenses in Period</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Vendor</th>
+                <th>Ex GST</th>
+                <th>GST</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for expense in expenses %}
+            <tr>
+                <td>{{ expense.expense_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ expense.vendor_name }}</td>
+                <td>${{ "%.2f"|format(expense.ex_gst_amount) }}</td>
+                <td>${{ "%.2f"|format(expense.gst_amount) }}</td>
+                <td>${{ "%.2f"|format(expense.total_amount) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

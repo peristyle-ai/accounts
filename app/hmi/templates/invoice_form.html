@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit Invoice' if invoice else 'New Invoice' }} - Accounting System{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>{{ 'Edit Invoice' if invoice else 'New Invoice' }}</h2>
+
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="client_name">Client Name *</label>
+            <input type="text" id="client_name" name="client_name" required value="{{ client_name or (invoice.client_name if invoice) }}">
+        </div>
+
+        <div class="form-group">
+            <label for="description">Description</label>
+            <textarea id="description" name="description">{{ description or (invoice.description if invoice) }}</textarea>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="amount">Amount *</label>
+                <input type="number" id="amount" name="amount" step="0.01" min="0" required value="{{ amount or (invoice.ex_gst_amount|string if invoice) }}">
+            </div>
+            <div class="form-group">
+                <label for="amount_type">Amount Type</label>
+                <select id="amount_type" name="amount_type">
+                    <option value="excludes" {% if amount_type == 'excludes' or not invoice %}selected{% endif %}>Excludes GST</option>
+                    <option value="includes" {% if amount_type == 'includes' %}selected{% endif %}>Includes GST</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="gst_type">GST Type</label>
+                <select id="gst_type" name="gst_type">
+                    <option value="0.1" {% if (gst_type or invoice.gst_type|string if invoice) == '0.1' %}selected{% endif %}>GST (10%)</option>
+                    <option value="0" {% if (gst_type or invoice.gst_type|string if invoice) == '0' %}selected{% endif %}>No GST (0%)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="invoice_date">Invoice Date *</label>
+                <input type="date" id="invoice_date" name="invoice_date" required value="{{ invoice_date or (invoice.invoice_date.strftime('%Y-%m-%d') if invoice) }}">
+            </div>
+            <div class="form-group">
+                <label for="due_date">Due Date</label>
+                <input type="date" id="due_date" name="due_date" value="{{ due_date or (invoice.due_date.strftime('%Y-%m-%d') if invoice.due_date) }}">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="account_category_id">Account Category</label>
+            <select id="account_category_id" name="account_category_id">
+                <option value="">-- Select Category --</option>
+                {% for category in categories %}
+                <option value="{{ category.id }}" {% if (account_category_id or invoice.account_category_id) == category.id %}selected{% endif %}>{{ category.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>New Account Category</label>
+            <input type="text" name="new_category_name" placeholder="Enter new category name (optional)">
+        </div>
+
+        <div class="actions">
+            <button type="submit" class="btn btn-primary">{{ 'Update' if invoice else 'Create' }}</button>
+            <a href="{{ url_for('hmi.invoices') }}" class="btn btn-secondary">Cancel</a>
+            {% if invoice %}
+            <a href="{{ url_for('hmi.download_invoice_pdf', invoice_id=invoice.id) }}" class="btn btn-primary">Download PDF</a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+{% endblock %}

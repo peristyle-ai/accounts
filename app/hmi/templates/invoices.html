@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Invoices - Accounting System{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Invoices</h2>
+
+    <form method="GET" class="filter-form">
+        <div class="form-group">
+            <label for="start_date">From Date</label>
+            <input type="date" id="start_date" name="start_date" value="{{ request.args.get('start_date', '') }}">
+        </div>
+        <div class="form-group">
+            <label for="end_date">To Date</label>
+            <input type="date" id="end_date" name="end_date" value="{{ request.args.get('end_date', '') }}">
+        </div>
+        <button type="submit" class="btn btn-secondary">Filter</button>
+        <a href="{{ url_for('hmi.invoices') }}" class="btn btn-secondary">Clear</a>
+    </form>
+
+    <p><a href="{{ url_for('hmi.new_invoice') }}" class="btn btn-primary">New Invoice</a></p>
+
+    {% if invoices %}
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Client</th>
+                <th>Category</th>
+                <th>Ex GST</th>
+                <th>GST</th>
+                <th>Total</th>
+                <th>Due Date</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for invoice in invoices %}
+            <tr>
+                <td>{{ invoice.invoice_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ invoice.client_name }}</td>
+                <td>{{ invoice.account_category.name if invoice.account_category else '-' }}</td>
+                <td>${{ "%.2f"|format(invoice.ex_gst_amount) }}</td>
+                <td>${{ "%.2f"|format(invoice.gst_amount) }}</td>
+                <td>${{ "%.2f"|format(invoice.total_amount) }}</td>
+                <td>{{ invoice.due_date.strftime('%Y-%m-%d') if invoice.due_date else '-' }}</td>
+                <td class="actions">
+                    <a href="{{ url_for('hmi.download_invoice_pdf', invoice_id=invoice.id) }}" class="btn btn-primary btn-small" title="Download PDF">PDF</a>
+                    <a href="{{ url_for('hmi.edit_invoice', invoice_id=invoice.id) }}" class="btn btn-secondary btn-small">Edit</a>
+                    <form method="POST" action="{{ url_for('hmi.delete_invoice', invoice_id=invoice.id) }}" style="display: inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-danger btn-small" onclick="return confirm('Are you sure?')">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No invoices found. <a href="{{ url_for('hmi.new_invoice') }}">Create a new invoice</a></p>
+    {% endif %}
+</div>
+{% endblock %}

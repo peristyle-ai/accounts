@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Xero Export - Accounting System{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Xero Export</h2>
+    <p style="margin-bottom: 1.5rem; color: #7f8c8d;">
+        Downloads a ZIP with three CSVs in Xero's standard import format — give
+        it to your accountant and they can ingest it directly:
+    </p>
+    <ul style="margin-bottom: 1.5rem; color: #7f8c8d; padding-left: 1.5rem;">
+        <li><strong>xero_invoices.csv</strong> — Sales / AR (Invoice template)</li>
+        <li><strong>xero_bills.csv</strong> — Purchases / AP (Bill template)</li>
+        <li><strong>xero_contacts.csv</strong> — Customers + distinct vendors (Contact template)</li>
+    </ul>
+</div>
+
+<div class="card">
+    <h3>Option 1: All time</h3>
+    <p style="color: #7f8c8d; margin-bottom: 1rem;">
+        Exports every invoice, expense, and contact in the system.
+        Use this when the accountant needs a clean baseline.
+    </p>
+    <form method="POST" action="{{ url_for('hmi.xero_export_download') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="mode" value="all">
+        <label style="display: block; margin-bottom: 0.75rem;">
+            <input type="checkbox" name="include_drafts" checked>
+            Include draft invoices (default — untick to skip them)
+        </label>
+        <button type="submit" class="btn btn-primary">Download All Time</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>Option 2: Custom date range</h3>
+    <p style="color: #7f8c8d; margin-bottom: 1rem;">
+        Export only what's inside the range — useful for catching up on a
+        specific period or handing over a partial year.
+    </p>
+    <form method="POST" action="{{ url_for('hmi.xero_export_download') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="mode" value="custom">
+        <div class="filter-form">
+            <div class="form-group">
+                <label for="from_date">From</label>
+                <input type="date" id="from_date" name="from_date"
+                       value="{{ earliest }}" required>
+            </div>
+            <div class="form-group">
+                <label for="to_date">To</label>
+                <input type="date" id="to_date" name="to_date"
+                       value="{{ today }}" required>
+            </div>
+            <div class="form-group" style="flex: 0 0 auto;">
+                <label>&nbsp;</label>
+                <button type="submit" class="btn btn-primary">Download Range</button>
+            </div>
+        </div>
+        <div style="margin-top: 0.75rem;">
+            <label>
+                <input type="checkbox" name="include_drafts" checked>
+                Include draft invoices
+            </label>
+        </div>
+    </form>
+</div>
+
+<div class="card" style="background: #f8f9fa;">
+    <h3 style="font-size: 1rem;">Notes for the accountant</h3>
+    <ul style="font-size: 0.875rem; color: #555; padding-left: 1.5rem; line-height: 1.8;">
+        <li>Dates are <strong>DD/MM/YYYY</strong> (Xero's AU default)</li>
+        <li>Amounts are bare numbers (no <code>$</code>, no thousands separators)</li>
+        <li>Currency is <strong>AUD</strong> throughout</li>
+        <li>TaxType is mapped: 10% → <code>GST on Income</code> / <code>GST on Expenses</code>; 0% → <code>GST Free …</code></li>
+        <li>Each CSV is UTF-8 with BOM — opens cleanly in Excel on Windows</li>
+        <li>Unknown columns (Status, AccountCategory) are ignored by Xero on import but useful for review</li>
+    </ul>
+</div>
+
+{% endblock %}

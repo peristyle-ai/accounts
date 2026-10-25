@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}API Key - Accounting System{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>API Key Management</h2>
+
+    <p>Your API key is used to authenticate with the accounting API for AI agent access.</p>
+
+    {% if user.get_api_key() %}
+    <div class="form-group">
+        <label>Current API Key</label>
+        <input type="text" readonly value="{{ user.get_api_key() }}" style="font-family: monospace;">
+        <p style="font-size: 0.875rem; color: #666; margin-top: 0.5rem;">
+            Keep this key secret. If compromised, generate a new one to invalidate the old key.
+        </p>
+    </div>
+    {% else %}
+    <div class="flash info">
+        You don't have an API key yet. Generate one below.
+    </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('hmi.generate_api_key') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-danger">
+            Generate New API Key
+        </button>
+    </form>
+
+    <p style="margin-top: 1rem; font-size: 0.875rem; color: #666;">
+        Note: Generating a new key will invalidate your existing key immediately.
+    </p>
+</div>
+{% endblock %}

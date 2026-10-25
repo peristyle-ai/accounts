@@ -1,0 +1,26 @@
+[Unit]
+Description=accounts (peristyle-ai install, app-host, ports 5075+5076)
+After=network-online.target
+Wants=network-online.target
+StartLimitBurst=10
+StartLimitIntervalSec=300s
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/accounts
+EnvironmentFile=/opt/accounts/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/accounts/.venv/bin/python3 run.py --api-port 5075 --hmi-port 5076
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=accounts
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

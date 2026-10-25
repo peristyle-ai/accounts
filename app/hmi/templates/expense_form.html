@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit Expense' if expense else 'New Expense' }} - Accounting System{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>{{ 'Edit Expense' if expense else 'New Expense' }}</h2>
+
+    <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="vendor_name">Vendor Name *</label>
+            <input type="text" id="vendor_name" name="vendor_name" required value="{{ vendor_name or (expense.vendor_name if expense) }}">
+        </div>
+
+        <div class="form-group">
+            <label for="description">Description</label>
+            <textarea id="description" name="description">{{ description or (expense.description if expense) }}</textarea>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="amount">Amount *</label>
+                <input type="number" id="amount" name="amount" step="0.01" min="0" required value="{{ amount or (expense.ex_gst_amount|string if expense) }}">
+            </div>
+            <div class="form-group">
+                <label for="amount_type">Amount Type</label>
+                <select id="amount_type" name="amount_type">
+                    <option value="excludes" {% if amount_type == 'excludes' or not expense %}selected{% endif %}>Excludes GST</option>
+                    <option value="includes" {% if amount_type == 'includes' %}selected{% endif %}>Includes GST</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="currency">Currency</label>
+                <select id="currency" name="currency">
+                    <option value="AUD" {% if (currency or expense.currency if expense) == 'AUD' %}selected{% endif %}>AUD</option>
+                    <option value="USD" {% if (currency or expense.currency if expense) == 'USD' %}selected{% endif %}>USD</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="gst_type">GST Type</label>
+                <select id="gst_type" name="gst_type">
+                    <option value="0.1" {% if (gst_type or expense.gst_type|string if expense) == '0.1' %}selected{% endif %}>GST (10%)</option>
+                    <option value="0" {% if (gst_type or expense.gst_type|string if expense) == '0' %}selected{% endif %}>No GST (0%)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="expense_date">Expense Date *</label>
+                <input type="date" id="expense_date" name="expense_date" required value="{{ expense_date or (expense.expense_date.strftime('%Y-%m-%d') if expense) }}">
+            </div>
+            <div class="form-group">
+                <label for="account_category_id">Account Category</label>
+                <select id="account_category_id" name="account_category_id">
+                    <option value="">-- Select Category --</option>
+                    {% for category in categories %}
+                    <option value="{{ category.id }}" {% if (account_category_id or expense.account_category_id) == category.id %}selected{% endif %}>{{ category.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>New Account Category</label>
+            <input type="text" name="new_category_name" placeholder="Enter new category name (optional)">
+        </div>
+
+        <div class="form-group">
+            <label for="attachment">Attachment (PDF, PNG, JPG)</label>
+            <input type="file" id="attachment" name="attachment" accept=".pdf,.png,.jpg,.jpeg">
+            {% if expense and expense.attachment_path %}
+            <p style="margin-top: 0.5rem; font-size: 0.875rem;">Current: {{ expense.attachment_path }}</p>
+            {% if expense.attachment_path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')) %}
+            <div style="margin-top: 1rem;">
+                <img src="{{ url_for('serve_upload', filename=expense.attachment_path.replace('uploads/', '')) }}" alt="Receipt" style="max-width: 100%; max-height: 400px; border-radius: 8px; border: 1px solid #ddd;">
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+
+        <div class="actions">
+            <button type="submit" class="btn btn-primary">{{ 'Update' if expense else 'Create' }}</button>
+            <a href="{{ url_for('hmi.expenses') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
