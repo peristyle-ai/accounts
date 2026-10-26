@@ -36,6 +36,7 @@
                 <th>Ex GST</th>
                 <th>GST</th>
                 <th>Total</th>
+                <th style="white-space: nowrap; padding-left: 0.5rem; padding-right: 0.5rem;">Receipt</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -51,6 +52,14 @@
                 <td>${{ "%.2f"|format(expense.ex_gst_amount) }}</td>
                 <td>${{ "%.2f"|format(expense.gst_amount) }}</td>
                 <td>${{ "%.2f"|format(expense.total_amount) }}</td>
+                <td style="white-space: nowrap;">
+                    {% set rurl = receipt_url(expense.attachment_path) %}
+                    {% if rurl %}
+                    <a href="{{ rurl }}" target="_blank" rel="noopener" class="btn btn-secondary btn-small" title="Open the original receipt ({{ receipt_filename(expense.attachment_path) }})">🧾 View</a>
+                    {% else %}
+                    <span style="opacity: 0.7;" title="No receipt attached">—</span>
+                    {% endif %}
+                </td>
                 <td class="actions">
                     <a href="{{ url_for('hmi.edit_expense', expense_id=expense.id) }}" class="btn btn-secondary btn-small">Edit</a>
                     <form method="POST" action="{{ url_for('hmi.delete_expense', expense_id=expense.id) }}" style="display: inline;">
