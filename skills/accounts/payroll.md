@@ -346,7 +346,7 @@ HTTP. The settings live in the accounts repo `.env` (gitignored):
 
 ```
 MAIL_SERVER_API=https://mail.example.com:5003
-MAIL_SERVER_USER=<mailbox login, e.g. payroll@example.com>
+MAIL_SERVER_USER=<mailbox login, e.g. payroll@yourcompany.com.au>
 MAIL_SERVER_PASSWORD=<password for that mailbox>
 MAIL_SERVER_CA_BUNDLE=/opt/accounts/workspace/ssl/py_pg_email.crt
 ```
@@ -510,7 +510,7 @@ curl -X PUT https://accounts.example.com/api/settings/PAYSLIP_RECIPIENT_MODES \
 
 Values: `work,personal` (default) | `work` | `personal`. Currently `personal`
 -- Sample Employee's payslips go to her personal Gmail only, not the
-example.com records copy. A per-call override is possible with a POST body
+business's records copy. A per-call override is possible with a POST body
 of `{"recipient_kinds": ["personal"]}`.
 
 ### Correcting a prepared week

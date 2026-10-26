@@ -98,7 +98,7 @@ def fetch_export(api_base: str, api_key: str, from_date: str | None,
                  ctx: ssl.SSLContext | None) -> tuple[bytes, str]:
     """Call the STP export endpoint. Returns (payload_bytes, content_type).
 
-    NOTE: `ctx` is deliberately NOT used here. accounts.example.com is a
+    NOTE: `ctx` is deliberately NOT used here. The accounts API host is a
     public Cloudflare origin with a valid certificate, so it must be
     validated against the SYSTEM trust store. The custom CA is only needed
     for the mail server's self-signed cert.

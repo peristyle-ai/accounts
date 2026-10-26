@@ -31,15 +31,15 @@ reference and for the historical backfill.
 
 Note on Xero column conventions:
 - Dates are DD/MM/YYYY (Xero's AU default; works in their import wizard).
-- Currency is AUD (example.com is a Brisbane business).
+- Currency is AUD (the business trades in Australian dollars).
 - Amounts are bare numbers (no $ symbol, no thousands separators).
 - UTF-8 with BOM so Excel on Windows opens it cleanly.
 - Unknown columns are ignored by Xero on import — we add Status,
   AccountCategory, and InvoiceDescription as helpful extras for the
   accountant to review before kicking off the import.
 
-Why this exists (2026-09-17): the operator asked for an export route so his
-accountant can ingest a full year of example.com bookkeeping into Xero.
+Why this exists (2026-09-17): the operator asked for an export route so an
+accountant can ingest a full year of the business's bookkeeping into Xero.
 The previous workflow had no way to do this — accountants were stuck
 looking at PDF invoices one-by-one. This is the single-shot ingestion
 path.
