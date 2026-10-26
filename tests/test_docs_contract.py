@@ -23,6 +23,8 @@ What is checked:
 from __future__ import annotations
 
 import ast
+import io
+import tokenize
 import re
 from pathlib import Path
 
@@ -264,4 +266,124 @@ def test_no_script_defaults_to_a_reserved_documentation_domain():
         "these scripts fall back to a reserved documentation domain:\n  "
         + "\n  ".join(offenders)
         + "\nA reserved domain can never send or receive mail."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 5b: a reserved documentation domain must not be presented as a default
+#     in PROSE (docstrings, comments, markdown)
+# ---------------------------------------------------------------------------
+
+# The AST check above can only see code. It cannot see a docstring that
+# says "default: payroll@example.com" when the code has no default at all
+# -- which is how the published repo shipped two contradictory docstrings.
+# A doc that describes a contract the code no longer honours is worse than
+# no doc: an operator reads it, trusts it, and gets a silent failure.
+
+_RESERVED_DOMAIN = re.compile(
+    r"(example\.(com|org|net|edu)"
+    r"|[A-Za-z0-9.-]+\.(example|invalid|test|localhost))"
+)
+
+# Words that show the author is talking ABOUT the reserved domain rather
+# than using it as an address.
+_DISCLAIMER = re.compile(
+    r"(reserved|documentation domain|no default|old default|previously"
+    r"|placeholder|never\b|rfc ?2606|placeholder)",
+    re.IGNORECASE,
+)
+
+_DEFAULT_CLAIM = re.compile(r"\bdefault", re.IGNORECASE)
+
+# An obvious placeholder marker ("your-deployment.example.com") is not a
+# claim about a default -- it is the reader substituting their own value.
+_PLACEHOLDER_MARKER = re.compile(r"\byour[-_a-z0-9]*\b", re.IGNORECASE)
+
+
+def _prose_windows(path: pathlib.Path, src: str) -> list[tuple[int, str, str]]:
+    """(lineno, line, context) for every docstring line and comment.
+
+    `context` is the text immediately around the line AND INCLUDING the
+    line itself -- a default claim and the domain it refers to are often
+    on the SAME line ("default: payroll@example.com"), so excluding the
+    line hides the very claim we are looking for.
+
+    For a docstring the context comes from the docstring's OWN lines, not
+    the file's: a docstring's first line is not the file's first line, so
+    indexing the file by a docstring's line number silently misaligns
+    the window (and that misalignment is invisible in a passing test).
+    """
+    out: list[tuple[int, str, str]] = []
+    try:
+        tree = ast.parse(src, filename=str(path))
+    except SyntaxError:
+        # A file that will not parse is a FAILURE, not a skip: a check that
+        # silently skips what it could not examine reports a green it never
+        # earned.
+        raise AssertionError(f"{path} does not parse; cannot check its prose")
+    doc_ids = _docstring_nodes(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                and id(node) in doc_ids:
+            dlines = node.value.splitlines()
+            for i, ln in enumerate(dlines):
+                out.append((node.lineno + i, ln,
+                            "\n".join(dlines[max(0, i - 2):i + 1])))
+    file_lines = src.splitlines()
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+            if tok.type == tokenize.COMMENT:
+                ln = tok.start[0]
+                out.append((ln, tok.string,
+                            "\n".join(file_lines[max(0, ln - 2):ln])))
+    except (tokenize.TokenError, IndentationError):
+        pass
+    return out
+
+
+def test_no_prose_presents_a_reserved_domain_as_a_default():
+    """A docstring must not advertise a default the code does not have."""
+    offenders: list[str] = []
+    roots = [REPO_ROOT / "app", REPO_ROOT / "scripts", REPO_ROOT / "skills",
+             REPO_ROOT / "schema", REPO_ROOT / "migrations"]
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.suffix == ".py":
+                if "tests" in path.parts:
+                    continue
+                try:
+                    src = path.read_text()
+                except UnicodeDecodeError:
+                    continue
+                ctx = _prose_windows(path, src)
+            elif path.suffix in (".md", ".txt"):
+                try:
+                    lines = path.read_text().splitlines()
+                except UnicodeDecodeError:
+                    continue
+                ctx = [(i, ln, "\n".join(lines[max(0, i - 3):i]))
+                        for i, ln in enumerate(lines, 1)]
+            else:
+                continue
+            for lineno, text, window in ctx:
+                match = _RESERVED_DOMAIN.search(text)
+                if not match:
+                    continue
+                if _PLACEHOLDER_MARKER.search(match.group(0)):
+                    continue
+                if _DISCLAIMER.search(window):
+                    continue
+                if _DEFAULT_CLAIM.search(window):
+                    offenders.append(
+                        f"{path.relative_to(REPO_ROOT)}:{lineno}: {text.strip()}"
+                    )
+    assert not offenders, (
+        "these docs advertise a reserved documentation domain as a default "
+        "that the code does not have:\n  " + "\n  ".join(sorted(offenders))
+        + "\nA reserved domain can never send or receive mail; and a doc that "
+          "contradicts the code is worse than no doc."
     )
