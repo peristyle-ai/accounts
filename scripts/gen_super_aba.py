@@ -18,8 +18,9 @@ Usage:
     PROCESS_DATE=2026-09-22 OUT_PATH=/tmp/x.aba \
         python3 scripts/gen_super_aba.py
 
-    # Override the payer (default: payroll@example.com) or destination label
-    PAYER_EMAIL=owner@example.com PAYEE_LABEL='ATO (BAS)' \
+    # Override the payer (PAYER_EMAIL is required - there is no default) or
+    # destination label
+    PAYER_EMAIL=you@yourcompany.com.au PAYEE_LABEL='ATO (BAS)' \
         python3 scripts/gen_super_aba.py
 
 Output:

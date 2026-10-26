@@ -1,7 +1,7 @@
 """
 Payee directory — org-scoped bank destinations for outbound payments.
 
-Stores third-party bank accounts that example.com pays on a recurring
+Stores third-party bank accounts that the business pays on a recurring
 basis: super clearing houses (Wrkr, etc.), the ATO, suppliers, etc.
 
 Why a separate model:

@@ -13,7 +13,7 @@ Why this exists:
   email alone, which led to wrongly marking invoices as paid that the
   payer had not actually settled (Sept 2026 incident — see MEMORY).
 - The workflow:
-    1. Script reads Xero emails from `payroll@example.com` Inbox.
+    1. Script reads Xero emails from the business's Inbox.
     2. Extracts the reference / amount / date from the PDF (pdftotext).
     3. Looks up the matching invoice by `invoice_ref_token` (first 8 chars
        of the UUID, uppercased).

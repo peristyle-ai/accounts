@@ -27,8 +27,8 @@ Environment:
     EMPLOYEE_ID optional employee UUID
     STATUS      optional csv, default 'paid,finalized'
     OUT_DIR     output directory, default /tmp/stp-payruns
-    BIZ_EMAIL   business user whose pay events to export,
-                default payroll@example.com
+    BIZ_EMAIL   business user whose pay events to export
+                (required - there is no default)
 
 Output:
     One CSV per pay run, named stp-payrun-YYYY-MM-DD.csv
