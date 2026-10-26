@@ -201,6 +201,57 @@ def dashboard():
                            quarterly_gst_owing=quarterly_gst_owing)
 
 
+def _fmt_sent(dt):
+    """Format a sender timestamp for display in Brisbane local time."""
+    if not dt:
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+        return dt.astimezone(ZoneInfo('Australia/Brisbane')).strftime('%Y-%m-%d %H:%M')
+    except Exception:
+        return dt.strftime('%Y-%m-%d %H:%M')
+
+
+def _sender_label(expense):
+    """Display label for the person who sent the receipt."""
+    if expense.submitted_by:
+        return expense.submitted_by
+    if expense.submitted_phone:
+        return expense.submitted_phone
+    return None
+
+
+@hmi_bp.route('/review')
+@login_required
+def review():
+    """Review queue — expenses still flagged `requires_review`.
+
+    Jessica, 2026-10-26: this used to be a filter on /expenses
+    ("Show Requires Review" -> "Showing: Requires Review Only"). She wants
+    it to be a place you GO to, with a back button, not a mode you toggle.
+    """
+    user_id = session['user_id']
+    expenses = (
+        Expense.query
+        .filter_by(user_id=user_id, requires_review=True)
+        .order_by(
+            Expense.submitted_at.desc().nullslast(),
+            Expense.expense_date.desc(),
+            Expense.id.desc(),
+        )
+        .all()
+    )
+    rows = [
+        {
+            'expense': e,
+            'sender': _sender_label(e),
+            'sent': _fmt_sent(e.submitted_at),
+        }
+        for e in expenses
+    ]
+    return render_template('review.html', rows=rows, review_count=len(rows))
+
+
 @hmi_bp.route('/expenses')
 @login_required
 def expenses():
@@ -229,8 +280,11 @@ def expenses():
     if requires_review == '1':
         query = query.filter(Expense.requires_review == True)
 
+    # 2026-10-26: pending count for the "Review" button.
+    review_count = Expense.query.filter_by(user_id=user_id, requires_review=True).count()
+
     expenses = query.order_by(Expense.expense_date.desc()).all()
-    return render_template('expenses.html', expenses=expenses)
+    return render_template('expenses.html', expenses=expenses, review_count=review_count)
 
 
 @hmi_bp.route('/expenses/new', methods=['GET', 'POST'])
