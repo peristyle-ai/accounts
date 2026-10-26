@@ -19,6 +19,82 @@ from app.shared.rate_limiter import rate_limit_hmi, record_attempt, _get_client_
 hmi_bp = Blueprint('hmi', __name__)
 
 
+# =====================================================================
+# Receipt URL helper (2026-10-26)
+# ---------------------------------------------------------------------
+# J asked for "Open the original receipt": a View-receipt button in the
+# expenses list and one on the edit-expense form.
+#
+# The blocker: `attachment_path` is stored in TWO different shapes.
+#   - absolute: "/home/enp/py_pg_accounts/uploads/expenses/<name>.jpg"
+#     (UPLOAD_FOLDER is absolute in ~/py_pg_accounts/.env — every row
+#      created via the API lands here; 63/63 rows on 2026-10-26)
+#   - relative: "uploads/expenses/<name>.jpg"  (HMI form upload)
+#
+# The edit form used to do `attachment_path.replace('uploads/', '')`,
+# which mangles the absolute form into
+# "/home/enp/py_pg_accounts/expenses/<name>.jpg" -> /uploads//home/... -> 404.
+# So every receipt preview was dead. serve_upload() serves from
+# os.path.abspath(UPLOAD_FOLDER), so what we need is the path RELATIVE
+# to that root: "expenses/<name>.jpg".
+# =====================================================================
+
+def _receipt_relative_path(attachment_path):
+    """Return `attachment_path` relative to UPLOAD_FOLDER, or None."""
+    if not attachment_path:
+        return None
+    p = str(attachment_path)
+    upload_root = os.path.abspath(current_app.config.get('UPLOAD_FOLDER', 'uploads'))
+
+    # Absolute path under the upload root -> relpath handles it cleanly.
+    if os.path.isabs(p):
+        try:
+            rel = os.path.relpath(p, upload_root)
+            if not rel.startswith('..'):
+                return rel
+        except ValueError:
+            pass
+
+    # Relative "uploads/expenses/x.jpg" -> strip the leading "uploads/".
+    marker = 'uploads/'
+    idx = p.find(marker)
+    if idx >= 0:
+        return p[idx + len(marker):]
+
+    return os.path.basename(p)
+
+
+def receipt_url(attachment_path):
+    """URL for the stored receipt, or None when there is nothing to show.
+
+    Returns None (rather than a link that 404s) when the row has no
+    attachment or the file is no longer on disk.
+    """
+    rel = _receipt_relative_path(attachment_path)
+    if not rel:
+        return None
+    upload_root = os.path.abspath(current_app.config.get('UPLOAD_FOLDER', 'uploads'))
+    if not os.path.exists(os.path.join(upload_root, rel)):
+        return None
+    return url_for('serve_upload', filename=rel)
+
+
+def receipt_filename(attachment_path):
+    """Display name for the stored receipt (filename only, no paths)."""
+    if not attachment_path:
+        return None
+    return os.path.basename(str(attachment_path))
+
+
+@hmi_bp.app_context_processor
+def inject_receipt_helpers():
+    """Make receipt_url() / receipt_filename() available in every template."""
+    return {
+        'receipt_url': receipt_url,
+        'receipt_filename': receipt_filename,
+    }
+
+
 def login_required(f):
     from functools import wraps
     @wraps(f)
