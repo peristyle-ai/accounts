@@ -17,11 +17,18 @@
         </div>
         <button type="submit" class="btn btn-secondary">Filter</button>
         <a href="{{ url_for('hmi.expenses') }}" class="btn btn-secondary">Clear</a>
+<<<<<<< HEAD
         {% if request.args.get('requires_review') == '1' %}
         <span style="color: red; font-weight: bold;">Showing: Requires Review Only</span>
         {% else %}
         <a href="{{ url_for('hmi.expenses', requires_review='1') }}" class="btn btn-secondary">Show Requires Review</a>
         {% endif %}
+=======
+        {# 2026-10-26: the review queue is a page now, not a filter on this
+           list (Jessica). This button goes THERE; the old
+           "Showing: Requires Review Only" mode is gone from /expenses. #}
+        <a href="{{ url_for('hmi.review') }}" class="btn btn-secondary">Review{% if review_count %} ({{ review_count }}){% endif %}</a>
+>>>>>>> 08a5f02 (feat(hmi): review page + sender/sent columns on expenses)
     </form>
 
     <p><a href="{{ url_for('hmi.new_expense') }}" class="btn btn-primary">New Expense</a></p>
@@ -36,7 +43,11 @@
                 <th>Ex GST</th>
                 <th>GST</th>
                 <th>Total</th>
+<<<<<<< HEAD
                 <th style="white-space: nowrap; padding-left: 0.5rem; padding-right: 0.5rem;">Receipt</th>
+=======
+                <th class="receipt-col">Receipt</th>
+>>>>>>> 08a5f02 (feat(hmi): review page + sender/sent columns on expenses)
                 <th>Actions</th>
             </tr>
         </thead>
@@ -52,7 +63,11 @@
                 <td>${{ "%.2f"|format(expense.ex_gst_amount) }}</td>
                 <td>${{ "%.2f"|format(expense.gst_amount) }}</td>
                 <td>${{ "%.2f"|format(expense.total_amount) }}</td>
+<<<<<<< HEAD
                 <td style="white-space: nowrap;">
+=======
+                <td class="receipt-cell">
+>>>>>>> 08a5f02 (feat(hmi): review page + sender/sent columns on expenses)
                     {% set rurl = receipt_url(expense.attachment_path) %}
                     {% if rurl %}
                     <a href="{{ rurl }}" target="_blank" rel="noopener" class="btn btn-secondary btn-small" title="Open the original receipt ({{ receipt_filename(expense.attachment_path) }})">🧾 View</a>
@@ -63,7 +78,6 @@
                 <td class="actions">
                     <a href="{{ url_for('hmi.edit_expense', expense_id=expense.id) }}" class="btn btn-secondary btn-small">Edit</a>
                     <form method="POST" action="{{ url_for('hmi.delete_expense', expense_id=expense.id) }}" style="display: inline;">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-danger btn-small" onclick="return confirm('Are you sure?')">Delete</button>
                     </form>
                 </td>

@@ -24,6 +24,14 @@ class Expense(db.Model):
     expense_date = db.Column(db.Date, nullable=False)
     attachment_path = db.Column(db.String(500), nullable=True)
     requires_review = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    # 2026-10-26: sender tracking (Jessica's review-page request).
+    # submitted_by = display name resolved from the staff roster at ingest
+    # time; submitted_phone = raw sender phone ('+61...'); submitted_at =
+    # when the receipt was sent/received (NOT the receipt date — that lives
+    # in expense_date). All nullable.
+    submitted_by = db.Column(db.String(120), nullable=True)
+    submitted_phone = db.Column(db.String(32), nullable=True)
+    submitted_at = db.Column(db.DateTime(timezone=True), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=get_utc_now)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=get_utc_now, onupdate=get_utc_now)
 
@@ -56,6 +64,9 @@ class Expense(db.Model):
             'expense_date': self.expense_date.isoformat() if self.expense_date else None,
             'attachment_path': self.attachment_path,
             'requires_review': self.requires_review,
+            'submitted_by': self.submitted_by,
+            'submitted_phone': self.submitted_phone,
+            'submitted_at': self.submitted_at.isoformat() if self.submitted_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

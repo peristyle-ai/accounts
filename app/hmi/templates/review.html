@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Review - Accounting System{% endblock %}
+
+{% block content %}
+<div class="card">
+    {# 2026-10-26: the review queue is its own page (Jessica). It used to be
+       a filter on /expenses ("Show Requires Review" -> "Showing: Requires
+       Review Only"); she wants it to be a place you GO to, with a way back.
+       The orange "Showing" line is now the back button. #}
+    <div class="dashboard-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+            <a href="{{ url_for('hmi.expenses') }}" class="btn btn-secondary" title="Back to the full expenses list">← Back to Expenses</a>
+            <h2 style="margin: 0;">Requires Review{% if review_count %} ({{ review_count }}){% endif %}</h2>
+        </div>
+        {% if review_count %}
+        <span class="text-negative" style="font-weight: 600;">Showing: Requires Review Only</span>
+        {% endif %}
+    </div>
+
+    {% if rows %}
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Vendor</th>
+                <th>Category</th>
+                <th>Ex GST</th>
+                <th>GST</th>
+                <th>Total</th>
+                <th>Sender</th>
+                <th>Sent</th>
+                <th class="receipt-col">Receipt</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            {% set expense = row.expense %}
+            <tr>
+                <td>{{ expense.expense_date.strftime('%Y-%m-%d') }}</td>
+                <td>
+                    {{ expense.vendor_name }}
+                    <span class="text-negative"> [REVIEW]</span>
+                </td>
+                <td>{{ expense.account_category.name if expense.account_category else '-' }}</td>
+                <td>${{ "%.2f"|format(expense.ex_gst_amount) }}</td>
+                <td>${{ "%.2f"|format(expense.gst_amount) }}</td>
+                <td>${{ "%.2f"|format(expense.total_amount) }}</td>
+                <td>
+                    {% if row.sender %}{{ row.sender }}
+                    {% else %}<span class="text-muted">—</span>{% endif %}
+                </td>
+                <td>
+                    {% if row.sent %}{{ row.sent }}
+                    {% else %}<span class="text-muted">—</span>{% endif %}
+                </td>
+                <td class="receipt-cell">
+                    {% set rurl = receipt_url(expense.attachment_path) %}
+                    {% if rurl %}
+                    <a href="{{ rurl }}" target="_blank" rel="noopener" class="btn btn-secondary btn-small" title="Open the original receipt ({{ receipt_filename(expense.attachment_path) }})">🧾 View</a>
+                    {% else %}
+                    <span class="text-muted" title="No receipt attached">—</span>
+                    {% endif %}
+                </td>
+                <td class="actions">
+                    <a href="{{ url_for('hmi.edit_expense', expense_id=expense.id) }}" class="btn btn-secondary btn-small">Edit</a>
+                    <form method="POST" action="{{ url_for('hmi.delete_expense', expense_id=expense.id) }}" class="actions-form">
+                        <button type="submit" class="btn btn-danger btn-small" onclick="return confirm('Are you sure?')">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">Nothing to review — every expense has been checked. 🎉</p>
+    {% endif %}
+</div>
+{% endblock %}

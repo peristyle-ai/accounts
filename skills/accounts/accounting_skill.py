@@ -205,7 +205,10 @@ class AccountingSkill:
         amount_type: str = "excludes",
         currency: str = "AUD",
         description: str = "",
-        account_category_id: Optional[str] = None
+        account_category_id: Optional[str] = None,
+        submitted_by: Optional[str] = None,
+        submitted_phone: Optional[str] = None,
+        submitted_at: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create a new expense record.
@@ -234,6 +237,16 @@ class AccountingSkill:
         }
         if account_category_id:
             data['account_category_id'] = account_category_id
+        # 2026-10-26: sender tracking (Jessica's review-page request).
+        if submitted_by:
+            data['submitted_by'] = submitted_by
+        if submitted_phone:
+            data['submitted_phone'] = submitted_phone
+        if submitted_at:
+            data['submitted_at'] = (
+                submitted_at.isoformat() if hasattr(submitted_at, 'isoformat')
+                else str(submitted_at)
+            )
 
         result = self._make_request('POST', '/api/expenses', data)
         return result['expense']
@@ -285,7 +298,7 @@ class AccountingSkill:
         """
         data = {}
         for key, value in kwargs.items():
-            if key in ['vendor_name', 'description', 'expense_date', 'account_category_id', 'amount_type', 'currency']:
+            if key in ['vendor_name', 'description', 'expense_date', 'account_category_id', 'amount_type', 'currency', 'submitted_by', 'submitted_phone', 'submitted_at']:
                 data[key] = value
             elif key in ['amount', 'ex_gst_amount', 'gst_type']:
                 data[key] = str(value)

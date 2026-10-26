@@ -4,8 +4,13 @@ from flask import Blueprint, request, jsonify, current_app, send_file
 from werkzeug.utils import secure_filename
 import os
 import io
+<<<<<<< HEAD
 
 logger = logging.getLogger(__name__)
+=======
+from decimal import Decimal
+from datetime import date, datetime, timezone
+>>>>>>> 08a5f02 (feat(hmi): review page + sender/sent columns on expenses)
 
 from app.models import db, get_utc_now
 from app.models.user import User
@@ -21,6 +26,48 @@ from app.shared.validators import validate_decimal, validate_date_string, valida
 from app.shared.address import validate_state, validate_postcode
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+
+# ---------------------------------------------------------------------------
+# Sender-tracking helpers (2026-10-26).
+# Jessica asked for "who was the sender and when it was sent" on the
+# review page. The sender arrives with the receipt over WhatsApp/Telegram;
+# before this, only the ingest audit log knew who sent what.
+#
+#   submitted_by    display name (roster-resolved at ingest time)
+#   submitted_phone raw sender phone
+#   submitted_at    ISO-8601 timestamp the receipt was sent/received
+# ---------------------------------------------------------------------------
+
+def _clean_sender_field(value, max_len, field_name):
+    """Trim a sender field to a bounded string or None. Returns (value, error)."""
+    if value is None:
+        return None, None
+    value = str(value).strip()
+    if not value:
+        return None, None
+    if len(value) > max_len:
+        return None, f'{field_name} must be {max_len} characters or fewer'
+    return value, None
+
+
+def _parse_submitted_at(value):
+    """Parse an ISO-8601 timestamp into a timezone-aware datetime, or None."""
+    if value in (None, ''):
+        return None
+    if isinstance(value, (date, datetime)):
+        dt = value
+    else:
+        raw = str(value).strip()
+        if raw.endswith('Z'):
+            raw = raw[:-1] + '+00:00'
+        try:
+            dt = datetime.fromisoformat(raw)
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 # ---------------------------------------------------------------------------
@@ -657,6 +704,47 @@ def create_expense():
         expense_date = validate_date_string(data.get('expense_date'), required=True)
         account_category_id = data.get('account_category_id')
 
+<<<<<<< HEAD
+=======
+        # 2026-09-24: project_code from enp_crm /api/leads/search (LD-YYYY-NNNNNN).
+        # Optional — NULL for overhead/admin expenses.
+        project_code = data.get('project_code')
+        if project_code is not None:
+            project_code = str(project_code).strip() or None
+            if project_code and len(project_code) > 50:
+                return jsonify({'error': 'project_code must be 50 characters or fewer'}), 400
+
+        # 2026-09-24: project_name — human-readable label, denormalized from cmo's
+        # lead.name at ingest time. Optional; defaults to None. Length-bounded.
+        project_name = data.get('project_name')
+        if project_name is not None:
+            project_name = str(project_name).strip() or None
+            if project_name and len(project_name) > 255:
+                return jsonify({'error': 'project_name must be 255 characters or fewer'}), 400
+
+        # 2026-09-25: attachment_sha256 (receipt dedup). Optional. Must be
+        # 64-char lowercase hex if provided. Set by ingest_receipt after
+        # hashing the attachment bytes.
+        attachment_sha256 = data.get('attachment_sha256')
+        if attachment_sha256 is not None:
+            attachment_sha256 = str(attachment_sha256).strip().lower() or None
+            if attachment_sha256:
+                if (len(attachment_sha256) != 64
+                        or not all(c in '0123456789abcdef' for c in attachment_sha256)):
+                    return jsonify({'error': 'attachment_sha256 must be 64 lowercase hex characters'}), 400
+
+        # 2026-10-26: sender tracking (Jessica's review-page request).
+        # submitted_by = display name, submitted_phone = raw sender,
+        # submitted_at = when the receipt was sent/received.
+        submitted_by, err = _clean_sender_field(data.get('submitted_by'), 120, 'submitted_by')
+        if err:
+            return jsonify({'error': err}), 400
+        submitted_phone, err = _clean_sender_field(data.get('submitted_phone'), 32, 'submitted_phone')
+        if err:
+            return jsonify({'error': err}), 400
+        submitted_at = _parse_submitted_at(data.get('submitted_at'))
+
+>>>>>>> 08a5f02 (feat(hmi): review page + sender/sent columns on expenses)
         if account_category_id and not validate_uuid(account_category_id):
             return jsonify({'error': 'Invalid account category ID'}), 400
 
@@ -695,7 +783,18 @@ def create_expense():
         gst_type=gst_type,
         total_amount=total_amount,
         expense_date=expense_date,
+<<<<<<< HEAD
         account_category_id=account_category_id
+=======
+        account_category_id=account_category_id,
+        project_code=project_code,
+        project_name=project_name,
+        attachment_sha256=attachment_sha256,
+        submitted_by=submitted_by,
+        submitted_phone=submitted_phone,
+        submitted_at=submitted_at,
+        requires_review=bool(data.get('requires_review', False))
+>>>>>>> 08a5f02 (feat(hmi): review page + sender/sent columns on expenses)
     )
 
     db.session.add(expense)
@@ -761,6 +860,20 @@ def update_expense(expense_id):
 
         if 'description' in data:
             expense.description = data['description']
+
+        # 2026-10-26: sender tracking — set/clear explicitly (None clears).
+        if 'submitted_by' in data:
+            val, err = _clean_sender_field(data.get('submitted_by'), 120, 'submitted_by')
+            if err:
+                return jsonify({'error': err}), 400
+            expense.submitted_by = val
+        if 'submitted_phone' in data:
+            val, err = _clean_sender_field(data.get('submitted_phone'), 32, 'submitted_phone')
+            if err:
+                return jsonify({'error': err}), 400
+            expense.submitted_phone = val
+        if 'submitted_at' in data:
+            expense.submitted_at = _parse_submitted_at(data.get('submitted_at'))
 
         amount_type = data.get('amount_type', 'excludes')
 
