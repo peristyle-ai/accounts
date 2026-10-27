@@ -237,7 +237,7 @@ class AccountingSkill:
         }
         if account_category_id:
             data['account_category_id'] = account_category_id
-        # 2026-10-26: sender tracking (Jessica's review-page request).
+        # 2026-10-26: sender tracking (the operator's review-page request).
         if submitted_by:
             data['submitted_by'] = submitted_by
         if submitted_phone:
