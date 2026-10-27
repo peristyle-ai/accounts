@@ -21,14 +21,28 @@
 # does that.
 remote="$1"
 
+ZERO_SHA="0000000000000000000000000000000000000000"
+
 case "$remote" in
   github|gh-peristyle_ai-accounts)
     while read -r _local_ref _local_sha _remote_ref _remote_sha; do
+      # A DELETION is always allowed: a delete refspec has an all-zero
+      # local sha, and deleting a ref can only REMOVE objects from the
+      # public remote -- it can never publish the archive's lineage.
+      # (2026-10-27: needed to remove feat/hmi-expense-receipt and
+      # feat/hmi-review-page, which were the only copy of that work and
+      # carried unresolved merge-conflict markers plus a real person's
+      # name in a PUBLIC repository. Their content is preserved in the
+      # private archive and in prod's history.)
+      if [ "$_local_sha" = "$ZERO_SHA" ]; then
+        continue
+      fi
       if [ "$_remote_ref" != "refs/heads/main" ]; then
         echo "REFUSED: pushing '$_remote_ref' to the public remote '$remote'." >&2
         echo "         Only refs/heads/main may be published. The private" >&2
         echo "         archive holds the pre-scrub history (including the old" >&2
         echo "         config.yaml password) and must never be published." >&2
+        echo "         (Deleting a ref is allowed -- it can only remove.)" >&2
         exit 1
       fi
     done
