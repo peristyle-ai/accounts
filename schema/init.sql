@@ -157,15 +157,14 @@ CREATE TABLE IF NOT EXISTS expenses (
     attachment_path VARCHAR(500),
     requires_review BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    -- 2026-10-26: sender tracking (Jessica's review-page request).
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- 2026-10-26: sender tracking (the operator's review-page request).
     -- submitted_by = display name resolved from the staff roster at ingest
     -- time; submitted_phone = raw sender; submitted_at = when it was sent.
     -- See schema/migrations/2026-10-26_add_sender_to_expenses.sql.
     submitted_by VARCHAR(120),
     submitted_phone VARCHAR(32),
-    submitted_at TIMESTAMPTZ,
-);
+    submitted_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_expenses_user_id ON expenses(user_id);

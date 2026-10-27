@@ -325,6 +325,26 @@
             margin-bottom: 0;
             flex: 1;
         }
+        /* Receipt column (2026-10-26, expense receipt view).
+           There is no separate stylesheet in this app -- every rule lives
+           in this <style> block -- so the .receipt-col / .receipt-cell
+           hooks are defined here rather than in a theme.css. */
+        .receipt-col {
+            width: 1%;
+            white-space: nowrap;
+        }
+        .receipt-cell {
+            white-space: nowrap;
+        }
+        @media (max-width: 600px) {
+            .receipt-col, .receipt-cell {
+                white-space: normal;
+            }
+            .receipt-cell .btn {
+                padding: 0.2rem 0.4rem;
+                font-size: 0.8rem;
+            }
+        }
     </style>
 </head>
 <body>

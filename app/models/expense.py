@@ -24,7 +24,7 @@ class Expense(db.Model):
     expense_date = db.Column(db.Date, nullable=False)
     attachment_path = db.Column(db.String(500), nullable=True)
     requires_review = db.Column(db.Boolean, nullable=False, default=False, index=True)
-    # 2026-10-26: sender tracking (Jessica's review-page request).
+    # 2026-10-26: sender tracking (the operator's review-page request).
     # submitted_by = display name resolved from the staff roster at ingest
     # time; submitted_phone = raw sender phone ('+61...'); submitted_at =
     # when the receipt was sent/received (NOT the receipt date — that lives

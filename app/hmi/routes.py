@@ -226,8 +226,8 @@ def _sender_label(expense):
 def review():
     """Review queue — expenses still flagged `requires_review`.
 
-    Jessica, 2026-10-26: this used to be a filter on /expenses
-    ("Show Requires Review" -> "Showing: Requires Review Only"). She wants
+    Operator, 2026-10-26: this used to be a filter on /expenses
+    ("Show Requires Review" -> "Showing: Requires Review Only"). They want
     it to be a place you GO to, with a back button, not a mode you toggle.
     """
     user_id = session['user_id']
