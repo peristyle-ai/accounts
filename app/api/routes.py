@@ -4,13 +4,9 @@ from flask import Blueprint, request, jsonify, current_app, send_file
 from werkzeug.utils import secure_filename
 import os
 import io
-<<<<<<< HEAD
+from datetime import date, datetime, timezone
 
 logger = logging.getLogger(__name__)
-=======
-from decimal import Decimal
-from datetime import date, datetime, timezone
->>>>>>> 08a5f02 (feat(hmi): review page + sender/sent columns on expenses)
 
 from app.models import db, get_utc_now
 from app.models.user import User
@@ -30,7 +26,7 @@ api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 # ---------------------------------------------------------------------------
 # Sender-tracking helpers (2026-10-26).
-# Jessica asked for "who was the sender and when it was sent" on the
+# The operator asked for "who was the sender and when it was sent" on the
 # review page. The sender arrives with the receipt over WhatsApp/Telegram;
 # before this, only the ingest audit log knew who sent what.
 #
@@ -704,8 +700,6 @@ def create_expense():
         expense_date = validate_date_string(data.get('expense_date'), required=True)
         account_category_id = data.get('account_category_id')
 
-<<<<<<< HEAD
-=======
         # 2026-09-24: project_code from enp_crm /api/leads/search (LD-YYYY-NNNNNN).
         # Optional — NULL for overhead/admin expenses.
         project_code = data.get('project_code')
@@ -733,7 +727,7 @@ def create_expense():
                         or not all(c in '0123456789abcdef' for c in attachment_sha256)):
                     return jsonify({'error': 'attachment_sha256 must be 64 lowercase hex characters'}), 400
 
-        # 2026-10-26: sender tracking (Jessica's review-page request).
+        # 2026-10-26: sender tracking (the operator's review-page request).
         # submitted_by = display name, submitted_phone = raw sender,
         # submitted_at = when the receipt was sent/received.
         submitted_by, err = _clean_sender_field(data.get('submitted_by'), 120, 'submitted_by')
@@ -744,7 +738,6 @@ def create_expense():
             return jsonify({'error': err}), 400
         submitted_at = _parse_submitted_at(data.get('submitted_at'))
 
->>>>>>> 08a5f02 (feat(hmi): review page + sender/sent columns on expenses)
         if account_category_id and not validate_uuid(account_category_id):
             return jsonify({'error': 'Invalid account category ID'}), 400
 
@@ -783,9 +776,6 @@ def create_expense():
         gst_type=gst_type,
         total_amount=total_amount,
         expense_date=expense_date,
-<<<<<<< HEAD
-        account_category_id=account_category_id
-=======
         account_category_id=account_category_id,
         project_code=project_code,
         project_name=project_name,
@@ -794,7 +784,6 @@ def create_expense():
         submitted_phone=submitted_phone,
         submitted_at=submitted_at,
         requires_review=bool(data.get('requires_review', False))
->>>>>>> 08a5f02 (feat(hmi): review page + sender/sent columns on expenses)
     )
 
     db.session.add(expense)

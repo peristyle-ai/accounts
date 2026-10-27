@@ -1,6 +1,6 @@
 -- 2026-10-26: who sent the receipt, and when.
 --
--- Jessica's request (action plan + HMI review page):
+-- The operator's request (action plan + HMI review page):
 --   "in review page can we also have columns for who was the sender and
 --    when it was sent (not just receipt date)"
 --
