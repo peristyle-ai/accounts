@@ -162,10 +162,11 @@ def main():
                         help='HMI server port. Overrides app.hmi_port from '
                              'config.yaml. Default: app.hmi_port in '
                              'config.yaml, else 5062.')
-    parser.add_argument('--host', default='127.0.0.1',
-                        help='Host address (default: 127.0.0.1). '
-                             'Set to 0.0.0.0 to bind on all interfaces, '
-                             'or override per-install via the API_HOST env var.')
+    parser.add_argument('--host', default=None,
+                        help='Host address to bind. Resolution order: '
+                             '--host flag > API_HOST env var > app.host in '
+                             'config.yaml > 127.0.0.1. Set to 0.0.0.0 to '
+                             'bind on all interfaces.')
 
     args = parser.parse_args()
 
@@ -197,7 +198,17 @@ def main():
     # install the schema. The service account has DML rights, not DDL.
     init_database(app)
 
-    host = args.host
+    # Bind address resolution (2026-10-28): the --host flag, the API_HOST
+    # env var and the app.host config key were ALL documented -- in
+    # run.py --help, in systemd/accounts-standalone.service and in
+    # coding_agents/SPEC_AND_REQUIREMENTS.md -- but only the --host flag
+    # was ever read. A doc that describes a contract the code does not
+    # honour is worse than no doc: an operator who set API_HOST=0.0.0.0
+    # to reach the API from the LAN got a service that still bound to
+    # 127.0.0.1. Now all three are honoured, most specific first.
+    host = (args.host
+            or os.environ.get('API_HOST')
+            or accounts_config.get('app', 'host', default='127.0.0.1'))
 
     if args.api_only:
         server = _make_flask_server(host, api_port, app, 'API')
