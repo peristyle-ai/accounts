@@ -54,12 +54,17 @@ app:
   logo_fallback_path: "assets/logos/logo-fallback.png"
   max_content_length: 10485760
 
-accounting:
-  default_gst_type: 0.1
-  financial_year_start_month: 7
-  financial_year_start_day: 1
-  financial_year_end_month: 6
-  financial_year_end_day: 30
+# NOTE: there is deliberately no `accounting:` block here. Earlier
+# versions of this file carried `default_gst_type` and
+# `financial_year_start_month/day` / `financial_year_end_month/day` --
+# but NO code ever read them, so editing them did nothing. The values
+# that are actually in force live in the code:
+#   * financial year  -- app/api/reports.py::get_aus_financial_year_dates
+#                        (1 July - 30 June, fixed)
+#   * GST rate        -- chosen per invoice (10% or 0%); the HMI form and
+#                        the API both take it as a field
+# A config key that no code reads is worse than no key: it looks like a
+# setting and silently does nothing. 2026-10-28.
 
 # Single Touch Payroll (ATO) reporting config.
 # Portal: https://portal.singletouch.com.au
@@ -73,11 +78,6 @@ stp:
 
   # Payroll product identifier (issued by the ATO for your payroll area)
   product_id: ""
-
-  # Payroll area - typically the business name as registered with the ATO
-  payroll_area: ""
-  # Payroll area type - leave empty unless the ATO instructs otherwise
-  payroll_area_type: ""
 
   # Employer ABN (11 digits, no spaces) - as registered with the ATO
   entity_abn: ""
