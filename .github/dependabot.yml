@@ -1,0 +1,36 @@
+# Dependabot version updates.
+#
+# The repo-level security toggles (vulnerability alerts and automated
+# security fixes) are enabled on the GitHub side. This file adds the
+# VERSION updates -- the routine "this dependency has a new release"
+# pull requests.
+#
+# The pip dependencies are grouped into one pull request on purpose: the
+# requirements are pinned, and 30 separate pull requests for 30 packages is
+# a queue nobody reads. One grouped pull request is reviewable.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
