@@ -1,0 +1,76 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  secret-scan:
+    # GitHub's own secret scanning and push protection are free on a PUBLIC
+    # repository. This job is the SYNCHRONOUS gate: it fails the build the
+    # moment a secret is committed. GitHub's own scanning is asynchronous --
+    # an alert arrives minutes after the push -- so this is the one that
+    # actually stops it.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The whole history, not a shallow clone: a secret that was
+          # committed and then deleted is still in the history, and
+          # deleting the file does not un-leak it.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: no secret was committed
+        run: python scripts/check_no_secrets.py
+
+  pytest:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: accounts_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:password@localhost:5432/accounts_test
+      ACCOUNTS_SCHEMA: accounts
+      PAYROLL_PII_KEY: ci-not-a-real-key
+      SECRET_KEY: ci-not-a-real-secret
+      ACCOUNTS_TEST_PASSWORD: not-a-real-password
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: install the dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: the schema
+        # The app installs its own schema into an existing database
+        # (schema mode). It is idempotent, so this is safe to run once.
+        run: |
+          set -euo pipefail
+          python3 init_db.py --mode=schema
+
+      - name: the tests
+        run: pytest -q

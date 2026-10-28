@@ -24,6 +24,7 @@ modified, and no route body is reached by a refused request -- the guard
 runs in the decorator, before the handler.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -38,7 +39,11 @@ from app.models.user_profile import UserProfile
 from app.models.user_payment_settings import UserPaymentSettings
 
 TEST_EMAIL = 'csrf-cookie-test@example.com'
-TEST_PASSWORD = 'testpassword123'
+# Fixture credential for the TEST database only. It comes from the
+# environment; the default is an obvious placeholder, so a copy of this
+# file cannot authenticate anywhere. A hardcoded value in a test file
+# is what put a live credential in a public repository once.
+TEST_PASSWORD = os.environ.get('ACCOUNTS_TEST_PASSWORD', 'not-a-real-password')
 TEST_API_KEY = 'k' * 64
 
 

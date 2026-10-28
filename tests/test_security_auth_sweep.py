@@ -31,6 +31,7 @@ modified. The rate limiter's counters are module-global, so they are
 reset before and after each test.
 """
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -47,7 +48,11 @@ from app.models.user_payment_settings import UserPaymentSettings
 from app.shared import rate_limiter
 
 TEST_EMAIL = 'sec-sweep-test@example.com'
-TEST_PASSWORD = 'testpassword123'
+# Fixture credential for the TEST database only. It comes from the
+# environment; the default is an obvious placeholder, so a copy of this
+# file cannot authenticate anywhere. A hardcoded value in a test file
+# is what put a live credential in a public repository once.
+TEST_PASSWORD = os.environ.get('ACCOUNTS_TEST_PASSWORD', 'not-a-real-password')
 
 _CSRF_RE = re.compile(rb'name="csrf_token"[^>]*value="([^"]+)"')
 

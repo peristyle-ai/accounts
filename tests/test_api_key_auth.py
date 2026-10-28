@@ -35,6 +35,7 @@ The fixtures here create a throwaway user and delete it on teardown,
 including on failure. No production row is modified.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -50,7 +51,11 @@ from app.shared.pii import is_encrypted_pii
 
 
 TEST_EMAIL = 'apikey-test@example.com'
-TEST_PASSWORD = 'testpassword123'
+# Fixture credential for the TEST database only. It comes from the
+# environment; the default is an obvious placeholder, so a copy of this
+# file cannot authenticate anywhere. A hardcoded value in a test file
+# is what put a live credential in a public repository once.
+TEST_PASSWORD = os.environ.get('ACCOUNTS_TEST_PASSWORD', 'not-a-real-password')
 
 # A cheap, user-scoped endpoint: it echoes the authenticated user.
 ENDPOINT = '/api/auth/business'

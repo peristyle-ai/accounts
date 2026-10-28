@@ -42,7 +42,11 @@ ROOT = Path(__file__).resolve().parent.parent
 
 A_EMAIL = 'access-sweep-a@example.com'
 B_EMAIL = 'access-sweep-b@example.com'
-PASSWORD = 'testpassword123'
+# Fixture credential for the TEST database only. It comes from the
+# environment; the default is an obvious placeholder, so a copy of this
+# file cannot authenticate anywhere. A hardcoded value in a test file
+# is what put a live credential in a public repository once.
+PASSWORD = os.environ.get('ACCOUNTS_TEST_PASSWORD', 'not-a-real-password')
 
 
 # ---------------------------------------------------------------------------
