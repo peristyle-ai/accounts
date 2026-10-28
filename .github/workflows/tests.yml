@@ -48,6 +48,13 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:password@localhost:5432/accounts_test
+      # init_db.py reads DATABASE_URL; the app itself builds its DSN from
+      # the DB_* vars, so BOTH are needed or the app connects with no password.
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: accounts_test
+      DB_USER: postgres
+      DB_PASSWORD: password
       SECRET_KEY: ci-not-a-real-secret
       ACCOUNTS_TEST_PASSWORD: not-a-real-password
 
