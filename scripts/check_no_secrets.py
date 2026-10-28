@@ -179,7 +179,15 @@ def main() -> int:
 
     # ---- 2. every blob in every commit -------------------------------
     objects = []
-    for line in run(["git", "rev-list", "--objects", "--all"]).splitlines():
+    # Only the BRANCH history is scanned. refs/pull/* are GitHub's own
+    # artefacts for pull requests, and GitHub keeps a CLOSED pull
+    # request's head ref pointing at the old commit long after the branch is
+    # gone -- so scanning them makes the gate red for history that is no
+    # longer reachable from the code, and a red gate blocks every pull
+    # request. A pull request's own branch IS under refs/heads/, so a
+    # secret introduced by a pull request is still caught.
+    for line in run(["git", "rev-list", "--objects",
+                      "--branches", "--remotes", "--tags"]).splitlines():
         parts = line.split(" ", 1)
         objects.append((parts[0], parts[1] if len(parts) > 1 else ""))
     blobs = [(oid, name) for oid, name in objects
@@ -197,7 +205,8 @@ def main() -> int:
     print(f"scanned the history: {len(blobs)} blobs, {scanned:,} bytes")
 
     # ---- 3. the commit messages --------------------------------------
-    msgs = run(["git", "log", "--all", "--format=%B"])
+    msgs = run(["git", "log", "--branches", "--remotes", "--tags",
+                      "--format=%B"])
     scan_text(msgs, "COMMIT MESSAGES", findings)
 
     # ---- the coverage gate -------------------------------------------
