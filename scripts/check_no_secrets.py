@@ -65,12 +65,23 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
 # if BOTH the place and the value match, so a real secret in a test file
 # is still a finding.
 ALLOWLIST: list[tuple[str, str, str]] = [
+# Each entry is (path-glob, exact value, why). A finding is excused only
+# if BOTH the place and the value match, so a real secret in a test file
+# is still a finding. The exemptions are printed on every run.
+    ("*.md", "user_api_key_here", "a documentation example"),
+    ("tests/*", "app/__init__.py", "a test's own path, not a credential"),
+    ("tests/*", "test-token", "a test fixture's throwaway token"),
+    ("tests/*", "whatever", "a test fixture's throwaway value"),
+    ("tests/*", "wrong-key", "a test fixture's deliberately-wrong value"),
+    ("*.github/workflows/*.yml", "password", "the CI's own throwaway postgres password"),
+    ("docs/*", "password", "a documentation example"),
     ("tests/*", "not-a-real-password", "the suite's throwaway fixture password"),
+    ("tests/*", "not-a-real-secure-password", "the suite's throwaway secure fixture password"),
     ("tests/*", "nobody", "a test fixture's placeholder password"),
     ("tests/*", "keepthispassword", "a test fixture's placeholder password"),
     ("tests/*", "***", "a test fixture's masked value"),
-    ("*.github/workflows/*.yml", "password", "the CI's own throwaway postgres password"),
-    ("docs/*", "password", "a documentation example"),
+    (".env.example", "password", "the example env's placeholder password"),
+("*.md", "password", "a documentation example's placeholder connection-string password"),
 ]
 
 # --- the exempt files --------------------------------------------------
