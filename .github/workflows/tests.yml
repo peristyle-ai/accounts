@@ -48,7 +48,6 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:password@localhost:5432/accounts_test
-      PAYROLL_PII_KEY: ci-not-a-real-key
       SECRET_KEY: ci-not-a-real-secret
       ACCOUNTS_TEST_PASSWORD: not-a-real-password
 
@@ -71,6 +70,10 @@ jobs:
         # already exist, which a CI database does not have.)
         run: |
           set -euo pipefail
+          # The app refuses to import unless PAYROLL_PII_KEY is a VALID
+          # Fernet key, so generate one per run rather than hardcoding a key
+          # in the repository.
+          echo "PAYROLL_PII_KEY=$(python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> "$GITHUB_ENV"
           python3 init_db.py --mode=standalone
 
       - name: the tests
