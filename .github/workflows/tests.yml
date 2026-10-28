@@ -48,7 +48,6 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:password@localhost:5432/accounts_test
-      ACCOUNTS_SCHEMA: accounts
       PAYROLL_PII_KEY: ci-not-a-real-key
       SECRET_KEY: ci-not-a-real-secret
       ACCOUNTS_TEST_PASSWORD: not-a-real-password
@@ -66,11 +65,13 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: the schema
-        # The app installs its own schema into an existing database
-        # (schema mode). It is idempotent, so this is safe to run once.
+        # --mode=standalone installs the tables into `public`, which is what a
+        # fresh checkout gets and needs no extra steps. (--mode=schema is the
+        # per-install path: it expects the SHARED auth table public.users to
+        # already exist, which a CI database does not have.)
         run: |
           set -euo pipefail
-          python3 init_db.py --mode=schema
+          python3 init_db.py --mode=standalone
 
       - name: the tests
         run: pytest -q
