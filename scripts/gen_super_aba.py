@@ -18,6 +18,8 @@ Usage:
     PROCESS_DATE=2026-09-22 OUT_PATH=/tmp/x.aba \
         python3 scripts/gen_super_aba.py
 
+    # AMOUNT and LODGEMENT_REF are REQUIRED (no defaults) -- see below.
+
     # Override the payer (PAYER_EMAIL is required - there is no default) or
     # destination label
     PAYER_EMAIL=you@yourcompany.com.au PAYEE_LABEL='ATO (BAS)' \
@@ -67,13 +69,45 @@ PROCESS_DATE = (date.fromisoformat(os.environ['PROCESS_DATE'])
                 if os.environ.get('PROCESS_DATE')
                 else date.today())
 
-# Default amount + lodgement ref — kept here because the ABA format
-# only takes one detail record per file. Future bulk runs would loop.
-AMOUNT = Decimal(os.environ.get('AMOUNT', '228.00'))
-LODGEMENT_REF = os.environ.get('LODGEMENT_REF', 'JESS SUPER 140914')
+# The ABA format takes only one detail record per file, so the amount
+# and the lodgement reference are stated per run.
+#
+# AMOUNT and LODGEMENT_REF are REQUIRED -- there is no default.
+#
+# The old defaults were AMOUNT='228.00' and LODGEMENT_REF='JESS SUPER
+# 140914'. The amount happened to be right for one employee's weekly
+# contribution and the lodgement reference was a SEPTEMBER artefact:
+# a run that forgot to pass them wrote a stale reference into a file
+# destined for a bank. This is the same class as the old
+# `payroll@example.com` sender default -- a placeholder, never a real
+# address -- so both are now required.
+#
+# The source of truth is the `accounts.super_payments` row (its amount
+# and its pay event's period end). The caller states the values it is
+# remitting; the script refuses to guess them.
+AMOUNT_RAW = os.environ.get('AMOUNT')
+LODGEMENT_REF = (os.environ.get('LODGEMENT_REF') or '').strip()
 OUT_PATH = os.environ.get('OUT_PATH', '/tmp/peristyle-super-DEFAULT.aba')
 
 # --- run ---------------------------------------------------------------
+# Validate BEFORE building the app: a refusal must not need a database
+# connection, so the check is exercisable in a bare test environment.
+if not AMOUNT_RAW:
+    sys.exit('AMOUNT is required -- it is the amount being remitted. '
+             'There is no default: read it from the super_payments row '
+             '(or the pay event) and pass it explicitly.')
+if not LODGEMENT_REF:
+    sys.exit('LODGEMENT_REF is required -- it is the remittance reference '
+             'that appears on the bank statement and lets the payment be '
+             'matched back. There is no default: it must name THIS '
+             'remittance.')
+try:
+    AMOUNT = Decimal(AMOUNT_RAW)
+except Exception:
+    sys.exit(f'AMOUNT is not a valid amount: {AMOUNT_RAW!r}')
+if AMOUNT <= 0:
+    sys.exit(f'AMOUNT must be greater than zero, got {AMOUNT}')
+
 app = create_app()
 with app.app_context():
     if not PAYER_EMAIL:
