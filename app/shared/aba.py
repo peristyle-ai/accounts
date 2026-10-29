@@ -193,7 +193,8 @@ def build_header_record(user, processing_date):
     return record
 
 
-def build_detail_record(bsb, account_number, account_name, amount, lodgement_ref, payer_bsb=''):
+def build_detail_record(bsb, account_number, account_name, amount, lodgement_ref,
+                        payer_bsb='', payer_account_number='', payer_name=''):
     """Build one Type 1 (detail) record.
 
     Args:
@@ -205,6 +206,10 @@ def build_detail_record(bsb, account_number, account_name, amount, lodgement_ref
       payer_bsb: payer's BSB (used in the trace record, positions 81-87).
                  Pass `user.bsb` from the caller. Blank if unavailable —
                  the trace field becomes 7 blanks, which NAB accepts.
+      payer_account_number: the PAYER's account number, for the trace
+                 account field (positions 88-96). Blank if unavailable.
+      payer_name: the PAYER's name, for the name-of-remitter field
+                 (positions 97-112). Blank if unavailable.
 
     Returns: a 120-character ASCII string.
     """
@@ -222,6 +227,15 @@ def build_detail_record(bsb, account_number, account_name, amount, lodgement_ref
     # we leave the field blank — NAB accepts blank trace records.
     trace_bsb = _bsb_format(payer_bsb) or _pad('', 7)
 
+    # Trace account number (88-96) and name of remitter (97-112): these
+    # identify the ORIGINATING account to the receiving bank. The ABA
+    # files NAB actually accepted for this payer carry them populated;
+    # a file with a blank trace account cannot be reconciled against
+    # the payer's own account. Populate them whenever the payer has them.
+    trace_acct = _pad(re.sub(r'\D', '', str(payer_account_number or '')),
+                       9, right_justify=True)
+    remitter = _clean_text(payer_name or '', 16)
+
     record = (
         '1'                        # 1: Record Type
         + bsb_field                # 2-8: Payee BSB (NNN-NNN)
@@ -232,9 +246,9 @@ def build_detail_record(bsb, account_number, account_name, amount, lodgement_ref
         + name_clean               # 31-62: Title of Account (32 chars)
         + _pad(lodgement_clean, 18) # 63-80: Lodgement Reference (18 chars)
         + trace_bsb                # 81-87: Trace BSB (payer's BSB)
-        + _pad('', 9)              # 88-96: Trace Account Number
-        + _pad('', 16)             # 97-112: Name of Remitter (optional, blank = use file header)
-        + _pad('', 8)              # 113-120: Amount of Withholding Tax (n/a for payroll)
+        + trace_acct               # 88-96: Trace Account Number (payer's account)
+        + remitter                 # 97-112: Name of Remitter (payer's name)
+        + '00000000'               # 113-120: Amount of Withholding Tax (n/a for payroll)
     )
     assert len(record) == RECORD_LENGTH, f'Detail record is {len(record)} chars, expected {RECORD_LENGTH}'
     return record
@@ -296,6 +310,8 @@ def build_aba_file(user, payments, processing_date):
     Returns: bytes (ASCII) terminated with CRLF between records.
     """
     payer_bsb = user.bsb_plain or ''
+    payer_account_number = user.account_number_plain or ''
+    payer_name = (user.account_name or user.business_name or '')
     lines = [build_header_record(user, processing_date)]
 
     total_cents = 0
@@ -308,6 +324,8 @@ def build_aba_file(user, payments, processing_date):
             amount=p['amount'],
             lodgement_ref=p.get('lodgement_ref', ''),
             payer_bsb=payer_bsb,
+            payer_account_number=payer_account_number,
+            payer_name=payer_name,
         ))
         total_cents += int((Decimal(str(p['amount'])) * 100).quantize(Decimal('1')))
         count += 1
