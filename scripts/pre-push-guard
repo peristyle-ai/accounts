@@ -1,8 +1,9 @@
 #!/bin/bash
-# Pre-push guard: only refs/heads/main may reach the PUBLIC remote.
+# Pre-push guard: what may reach the PUBLIC remote.
 #
 # Install with:
 #   cp scripts/pre-push-guard .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+#   (or: scripts/install_hooks.sh)
 #
 # WHY: the private archive (~/git_archive/accounts.git) holds the pre-scrub
 # history, including the commits that carried config.yaml with the live
@@ -14,38 +15,141 @@
 #
 # That is a one-keystroke-away leak, so it is blocked structurally rather
 # than left to discipline. Verified: --mirror and an explicit
-# refs/heads/archive-head are both REFUSED; refs/heads/main is allowed.
+# refs/heads/archive-head are both REFUSED.
 #
-# The hook is a LOCAL file (.git/hooks/) and is not version-controlled --
-# it must be re-installed after a fresh clone. scripts/install_hooks.sh
-# does that.
-remote="$1"
+# 2026-10-29: GitHub's branch protection now REFUSES a direct push to
+# main ("protected branch hook declined"), so the only publish path left
+# is a branch plus a Pull Request. This guard used to refuse every ref
+# except main -- which meant it refused the only path GitHub accepts.
+# It now allows the branch patterns used for PRs, under a PROOF rather
+# than a convention.
+#
+# The proof: the pushed history must be a PURE EXTENSION of the
+# published main. Formally, every commit the push would add must have
+# all of its parents either already in the published main or already
+# among the commits being added.
+#
+# The first version of that rule only asked whether the branch DESCENDED
+# from the published main -- and the self-test caught the hole: a merge
+# commit whose second parent is a foreign root still descends from the
+# published main, while dragging that foreign lineage into the public
+# repository. That is exactly the leak this guard exists to prevent, so
+# the rule is now stated over PARENTS, not over ancestry.
+#
+# Rules for the public remote:
+#   - a DELETION is always allowed (a delete refspec has an all-zero
+#     local sha; deleting can only remove objects).
+#   - refs/heads/main is allowed -- GitHub's own protection decides.
+#   - refs/heads/{feat,fix,publish}/* are allowed ONLY if the pushed
+#     history is a pure extension of the published main.
+#   - every other ref is REFUSED.
+#
+# Self-test: scripts/pre_push_guard_selftest.sh
+set -uo pipefail
 
+remote="$1"
 ZERO_SHA="0000000000000000000000000000000000000000"
 
-case "$remote" in
-  github|gh-peristyle_ai-accounts)
-    while read -r _local_ref _local_sha _remote_ref _remote_sha; do
-      # A DELETION is always allowed: a delete refspec has an all-zero
-      # local sha, and deleting a ref can only REMOVE objects from the
-      # public remote -- it can never publish the archive's lineage.
-      # (2026-10-27: needed to remove feat/hmi-expense-receipt and
-      # feat/hmi-review-page, which were the only copy of that work and
-      # carried unresolved merge-conflict markers plus a real person's
-      # name in a PUBLIC repository. Their content is preserved in the
-      # private archive and in prod's history.)
-      if [ "$_local_sha" = "$ZERO_SHA" ]; then
+is_public_remote() {
+  case "$1" in
+    github|gh-peristyle_ai-accounts) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+published_main_sha() {
+  # The sha the public remote currently has on refs/heads/main.
+  local sha
+  sha=$(git ls-remote "$remote" refs/heads/main 2>/dev/null | awk 'NR==1{print $1}')
+  if [ -z "$sha" ]; then
+    # Fall back to the last known remote-tracking ref.
+    sha=$(git rev-parse --verify --quiet "refs/remotes/$remote/main" 2>/dev/null || true)
+  fi
+  printf '%s' "$sha"
+}
+
+# is_pure_extension <published-sha> <pushed-sha>
+#
+# True when every commit the push would add has all of its parents
+# either already in the published main or already among the commits
+# being added. A branch that merely DESCENDS from the published main
+# can still merge a foreign root in; this walks the parents, so that
+# case is caught.
+is_pure_extension() {
+  local published="$1" sha="$2" new p
+  new="$(git rev-list "$sha" --not "$published" 2>/dev/null)" || return 1
+  [ -n "$new" ] || return 0
+  for c in $new; do
+    # `cut -s` matters: without it, cut PRINTS a line that has no
+    # delimiter unchanged -- so a root commit's own sha came back as
+    # its "parent", and a foreign root passed the check.
+    parents="$(git rev-list --parents -n1 "$c" 2>/dev/null | cut -s -d' ' -f2-)"
+    if [ -z "$parents" ]; then
+      # A commit with NO parents is a ROOT. The published main already
+      # has the root; adding a second one is what "two roots" means,
+      # and it is how a foreign lineage gets spliced in.
+      return 1
+    fi
+    for p in $parents; do
+      [ -n "$p" ] || continue
+      if printf '%s\n' "$new" | grep -qx "$p"; then
         continue
       fi
-      if [ "$_remote_ref" != "refs/heads/main" ]; then
+      if git merge-base --is-ancestor "$p" "$published" 2>/dev/null; then
+        continue
+      fi
+      return 1
+    done
+  done
+  return 0
+}
+
+if is_public_remote "$remote"; then
+  while read -r _local_ref _local_sha _remote_ref _remote_sha; do
+    if [ "$_local_sha" = "$ZERO_SHA" ]; then
+      continue
+    fi
+    if [ "$_remote_ref" = "refs/heads/main" ]; then
+      continue
+    fi
+    case "$_remote_ref" in
+      refs/heads/feat/*|refs/heads/fix/*|refs/heads/publish/*)
+        published="$(published_main_sha)"
+        if [ -z "$published" ]; then
+          echo "REFUSED: cannot determine the published main on '$remote', so" >&2
+          echo "         the branch's ancestry cannot be proven." >&2
+          exit 1
+        fi
+        if ! git cat-file -e "${published}^{commit}" 2>/dev/null; then
+          echo "REFUSED: the published main ($published) is not in this" >&2
+          echo "         clone, so the branch's ancestry cannot be proven." >&2
+          echo "         Fetch it first: git fetch $remote main" >&2
+          exit 1
+        fi
+        if is_pure_extension "$published" "$_local_sha"; then
+          continue
+        fi
+        echo "REFUSED: pushing '$_remote_ref' to '$remote'." >&2
+        echo "         The branch is not a pure extension of the published" >&2
+        echo "         main ($published): it carries a parent that the" >&2
+        echo "         published main does not have. That parent may be" >&2
+        echo "         from the archive's pre-scrub lineage, whose" >&2
+        echo "         config.yaml held the retired database password." >&2
+        echo "         Rebase the branch onto the published main (git rebase" >&2
+        echo "         --onto <published-main> <old-base> <branch>) and" >&2
+        echo "         push again." >&2
+        exit 1
+        ;;
+      *)
         echo "REFUSED: pushing '$_remote_ref' to the public remote '$remote'." >&2
-        echo "         Only refs/heads/main may be published. The private" >&2
-        echo "         archive holds the pre-scrub history (including the old" >&2
-        echo "         config.yaml password) and must never be published." >&2
+        echo "         Only refs/heads/main and the PR branch patterns" >&2
+        echo "         (feat/*, fix/*, publish/*) may be published. The" >&2
+        echo "         private archive holds the pre-scrub history (including" >&2
+        echo "         the old config.yaml password) and must never be." >&2
         echo "         (Deleting a ref is allowed -- it can only remove.)" >&2
         exit 1
-      fi
-    done
-    ;;
-esac
+        ;;
+    esac
+  done
+fi
 exit 0
