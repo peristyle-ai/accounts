@@ -123,6 +123,7 @@ def create_app(config_path=None):
         install_search_path_listener()
 
     from app.api.routes import api_bp
+    from app.api.quotes import quotes_bp
     from app.api.reports import reports_bp
     from app.api.payroll import payroll_api_bp
     from app.api.bas import bas_bp
@@ -140,12 +141,13 @@ def create_app(config_path=None):
     # CSRF protection for HMI/PWA forms (cookie-based auth)
     # API blueprints are exempt — they use X-API-Key header auth, not cookies
     csrf = CSRFProtect(app)
-    for bp in (api_bp, reports_bp, payroll_api_bp, bas_bp, bank_txn_bp,
+    for bp in (api_bp, quotes_bp, reports_bp, payroll_api_bp, bas_bp, bank_txn_bp,
                invoice_reminders_bp, payment_recon_bp, xero_export_bp,
                payroll_exports_bp, stp_exports_bp, settings_bp):
         csrf.exempt(bp)
 
     app.register_blueprint(api_bp)
+    app.register_blueprint(quotes_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(payroll_api_bp)
     app.register_blueprint(bas_bp)

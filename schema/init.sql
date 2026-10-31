@@ -274,6 +274,52 @@ CREATE INDEX IF NOT EXISTS idx_invoices_created_at ON invoices(created_at);
 CREATE INDEX IF NOT EXISTS idx_invoices_customer_id ON invoices(customer_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 
+-- =============================================================================
+-- Quotes (added 2026-10-30, `feat/quotes` branch)
+-- =============================================================================
+-- A quote is a PROPOSAL: line items, an ex-GST/GST/total breakdown and a
+-- validity date. It is a separate table from invoices (not a status on
+-- invoices) because the two have different lifecycles: a quote expires, an
+-- invoice is paid or overdue.
+--
+-- `lines` is JSONB, not a text description: the line items are what the
+-- customer negotiates, so they must round-trip exactly. Amounts are stored
+-- as strings inside the JSONB so they never pass through a float.
+--
+-- `converted_invoice_id` records the invoice this quote became, so the same
+-- scope can never be invoiced twice by accident.
+CREATE TABLE IF NOT EXISTS quotes (
+    id VARCHAR(36) PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+    user_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    customer_id VARCHAR(36) NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+    quote_number VARCHAR(32) NOT NULL,
+    client_name VARCHAR(255) NOT NULL,
+    lines JSONB NOT NULL DEFAULT '[]'::jsonb,
+    ex_gst_amount NUMERIC(12, 2) NOT NULL,
+    gst_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    gst_type NUMERIC(3, 1) NOT NULL DEFAULT 0,
+    total_amount NUMERIC(12, 2) NOT NULL,
+    quote_date DATE NOT NULL,
+    valid_until DATE,
+    status VARCHAR(20) NOT NULL DEFAULT 'draft',
+    notes TEXT,
+    attachment_path VARCHAR(500),
+    sent_at TIMESTAMPTZ,
+    accepted_at TIMESTAMPTZ,
+    declined_at TIMESTAMPTZ,
+    converted_invoice_id VARCHAR(36),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_quotes_user_id ON quotes(user_id);
+CREATE INDEX IF NOT EXISTS idx_quotes_customer_id ON quotes(customer_id);
+CREATE INDEX IF NOT EXISTS idx_quotes_quote_date ON quotes(quote_date);
+CREATE INDEX IF NOT EXISTS idx_quotes_status ON quotes(status);
+CREATE INDEX IF NOT EXISTS idx_quotes_quote_number ON quotes(quote_number);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quotes_user_quote_number
+    ON quotes(user_id, quote_number);
+
 -- Activity Logs table
 CREATE TABLE IF NOT EXISTS activity_logs (
     id VARCHAR(36) PRIMARY KEY DEFAULT uuid_generate_v4()::text,
