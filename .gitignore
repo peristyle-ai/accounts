@@ -55,3 +55,10 @@ assets/logos/brand-*.png
 # Uploads
 uploads/
 skills/__pycache__/
+
+# Local dev worktrees symlink these from the main checkout. The `dir/`
+# patterns above do not match a SYMLINK (git only treats a trailing slash
+# as "is a directory"), so name them explicitly or a worktree will
+# accidentally stage a symlink to the live deployment's .venv and uploads/.
+.venv
+uploads

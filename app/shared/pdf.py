@@ -925,3 +925,178 @@ def generate_payslip_pdf(user, employee, pay_event, lines=None, business_name=No
     doc.build(elements)
     buffer.seek(0)
     return buffer
+
+
+def generate_quote_pdf(user, quote):
+    """
+    Generate a PDF for a quotation and return it as a bytes buffer.
+
+    Args:
+        user: User object (with business details and logo)
+        quote: Quote object (with customer)
+
+    Returns:
+        BytesIO buffer positioned at the start of the PDF data
+
+    Deliberately mirrors the invoice layout (same logo resolution, same
+    header block, same table styles) so a customer who has seen an invoice
+    recognises the quote as the same document family. What it does NOT
+    carry is bank details: a quote is a proposal, not a request for money.
+    """
+    from reportlab.lib.enums import TA_RIGHT
+    from decimal import Decimal
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    elements = []
+    styles = getSampleStyleSheet()
+
+    logo_cell = []
+    _logo = _logo_image(user)
+    if _logo is not None:
+        logo_cell.append(_logo)
+
+    business_paragraphs = []
+    if user.business_name:
+        business_paragraphs.append(f'<b>{user.business_name}</b>')
+    if user.abn:
+        business_paragraphs.append(f'ABN: {user.abn}')
+    if render_address(user):
+        business_paragraphs.append(render_address(user).replace(chr(10), '<br/>'))
+    if user.contact_email:
+        business_paragraphs.append(f'Email: {user.contact_email}')
+    if user.contact_number:
+        business_paragraphs.append(f'Phone: {user.contact_number}')
+
+    business_style = ParagraphStyle('Business', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT, leading=12)
+    business_cell = [Paragraph('<br/>'.join(business_paragraphs), business_style)] if business_paragraphs else ['']
+
+    business_name_style = ParagraphStyle(
+        'BusinessName', parent=styles['Heading2'],
+        fontSize=20, alignment=0, leading=24,
+        textColor=colors.HexColor('#2c3e50'),
+        spaceAfter=0, spaceBefore=0
+    )
+    business_name_cell = [Paragraph(user.business_name, business_name_style)] if user.business_name else ['']
+
+    header_table = Table(
+        [[logo_cell, business_cell], [business_name_cell, '']],
+        colWidths=[8*cm, 8*cm]
+    )
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 4),
+        ('TOPPADDING', (0, 1), (0, 1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, 1), 0),
+    ]))
+    elements.append(header_table)
+    elements.append(Spacer(1, 0.3*cm))
+
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=28, spaceAfter=0, alignment=0, textColor=colors.HexColor('#2c3e50'))
+    title_cell = Paragraph('QUOTATION', title_style)
+    title_row = Table([[title_cell, '']], colWidths=[12*cm, 4*cm])
+    title_row.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('LINEBELOW', (0, 0), (-1, -1), 1.5, colors.HexColor('#2c3e50')),
+    ]))
+    elements.append(title_row)
+    elements.append(Spacer(1, 0.5*cm))
+
+    info_data = [
+        ['Quote Date:', str(quote.quote_date), 'Quote #:', quote.quote_number],
+        ['Valid Until:', str(quote.valid_until) if quote.valid_until else 'N/A', 'Status:', quote.status.title()],
+    ]
+    info_table = Table(info_data, colWidths=[3*cm, 5*cm, 3*cm, 5*cm])
+    info_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TEXTCOLOR', (0, 0), (0, -1), colors.grey),
+        ('TEXTCOLOR', (2, 0), (2, -1), colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 0.5*cm))
+
+    elements.append(Paragraph('<b>Quote To:</b>', styles['Heading3']))
+    customer = quote.customer
+    customer_info = f"<b>{customer.name}</b><br/>"
+    if customer.contact_name:
+        customer_info += f"Attn: {customer.contact_name}<br/>"
+    if render_address(customer):
+        customer_info += f"{render_address(customer).replace(chr(10), '<br/>')}<br/>"
+    if customer.contact_email:
+        customer_info += f"Email: {customer.contact_email}<br/>"
+    if customer.contact_number:
+        customer_info += f"Phone: {customer.contact_number}<br/>"
+    if customer.abn:
+        customer_info += f"ABN: {customer.abn}<br/>"
+    elements.append(Paragraph(customer_info, styles['Normal']))
+    elements.append(Spacer(1, 0.5*cm))
+
+    items_data = [['Description', 'Amount']]
+    for line in (quote.lines or []):
+        items_data.append([
+            Paragraph(str(line.get('description', '')), styles['Normal']),
+            f"${Decimal(str(line.get('amount', 0))):,.2f}",
+        ])
+    items_table = Table(items_data, colWidths=[12*cm, 4*cm])
+    items_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (-1, 0), (-1, -1), 'RIGHT'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+    ]))
+    elements.append(items_table)
+    elements.append(Spacer(1, 0.3*cm))
+
+    totals_data = [
+        ['Subtotal (ex GST):', f"${quote.ex_gst_amount:.2f}"],
+        [f'GST ({float(quote.gst_type)*100:.0f}%):', f"${quote.gst_amount:.2f}"],
+        ['TOTAL:', f"${quote.total_amount:.2f}"],
+    ]
+    totals_table = Table(totals_data, colWidths=[12*cm, 4*cm])
+    totals_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (-1, 0), (-1, -1), 'RIGHT'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LINEABOVE', (0, -1), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, -1), (-1, -1), 12),
+    ]))
+    elements.append(totals_table)
+
+    # A zero-GST quote to a customer with no ABN is usually an overseas
+    # customer, so say so on the document rather than leaving a bare $0.00
+    # line that reads like an error.
+    if Decimal(str(quote.gst_type)) == 0 and not (customer.abn or '').strip():
+        elements.append(Spacer(1, 0.4*cm))
+        elements.append(Paragraph(
+            '<i>No GST has been applied: the customer is not Australian GST registered.</i>',
+            styles['Normal']
+        ))
+
+    if quote.notes:
+        elements.append(Spacer(1, 0.7*cm))
+        elements.append(Paragraph('<b>Notes:</b>', styles['Heading3']))
+        elements.append(Paragraph(str(quote.notes).replace(chr(10), '<br/>'), styles['Normal']))
+
+    elements.append(Spacer(1, 1*cm))
+    validity = f'This quotation is valid until {quote.valid_until}.' if quote.valid_until else 'This quotation is subject to confirmation.'
+    elements.append(Paragraph(f'<i>{validity}</i>', styles['Normal']))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer

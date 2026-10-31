@@ -156,6 +156,41 @@ repository.
 | confirmed_received_at | TIMESTAMPTZ | Timestamp when customer confirmed receipt |
 | paid_at | TIMESTAMPTZ | Timestamp when payment was received |
 
+### quotes
+Added 2026-10-30 (`feat/quotes`). A quote is a PROPOSAL -- it is a separate
+table from invoices, not a status on invoices, because the two have
+different lifecycles (a quote expires; an invoice is paid or overdue).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID | Primary key |
+| user_id | BIGINT | Tenant owner |
+| customer_id | UUID | Foreign key to customers (REQUIRED) |
+| quote_number | VARCHAR(32) | Human reference, e.g. Q-2026-0001 (unique per tenant) |
+| client_name | VARCHAR(255) | Client name for display |
+| lines | JSONB | `[{"description": str, "amount": str}]` -- amounts are strings, never floats |
+| ex_gst_amount | NUMERIC(12,2) | DERIVED from the lines |
+| gst_amount | NUMERIC(12,2) | DERIVED |
+| gst_type | NUMERIC(3,1) | 0 or 0.1 |
+| total_amount | NUMERIC(12,2) | DERIVED |
+| quote_date | DATE | When the quote was issued |
+| valid_until | DATE | Expiry (defaults to quote_date + 30 days) |
+| status | VARCHAR(20) | draft, sent, accepted, declined, expired (default: draft) |
+| notes | TEXT | Free text shown on the PDF |
+| sent_at / accepted_at / declined_at | TIMESTAMPTZ | Lifecycle timestamps |
+| converted_invoice_id | UUID | The invoice this quote became; set once, so it cannot be invoiced twice |
+
+**Amounts are never accepted raw.** The API takes line items and derives
+ex-GST, GST and total. A caller that also sends `ex_gst_amount` has it
+ignored -- the quote is the lines, and the totals are arithmetic.
+
+Endpoints (all under `/api/quotes`, all `api_key_required`):
+`GET/POST ''`, `GET/PUT/DELETE '/<id>'`, `GET '/<id>/pdf'`,
+`POST '/<id>/mark-sent'`, `POST '/<id>/accept'`, `POST '/<id>/decline'`,
+`POST '/<id>/convert-to-invoice'`. Lifecycle transitions are separate
+endpoints, so an illegal transition (accepted -> draft) cannot be
+expressed; it is a 409.
+
 ### customers
 | Column | Type | Notes |
 |--------|------|-------|

@@ -19,6 +19,7 @@ from .user_profile import UserProfile
 from .user_payment_settings import UserPaymentSettings
 from .expense import Expense
 from .invoice import Invoice
+from .quote import Quote, QUOTE_STATUSES
 from .customer import Customer
 from .account_category import AccountCategory
 from .activity_log import ActivityLog
