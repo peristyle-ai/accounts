@@ -619,7 +619,20 @@ def main():
 
     # NAB ABA
     payee_label = "Wrkr Super (clearing house)"
-    lodgement_ref = f"JESS SUPER {period_end.strftime('%d%m%y')}".upper()
+    # The lodgement reference names the employee, so the super fund can
+    # match the payment. It is DEPLOYMENT DATA, not a constant in this
+    # PUBLIC repository -- the same rule the employer's ABN follows
+    # above. Precedence: config.yaml (stp.lodgement_ref_prefix), then
+    # the environment, then the employee's own bank_reference_prefix --
+    # so a deployment that wants a particular wording states it, and a
+    # real person's name is never in this repository.
+    lodgement_prefix = (
+        employer.get("lodgement_ref_prefix")
+        or os.environ.get("SUPER_LODGEMENT_PREFIX")
+        or emp_detail.get("bank_reference_prefix")
+        or "JP"
+    ).strip().upper()
+    lodgement_ref = f"{lodgement_prefix} SUPER {period_end.strftime('%d%m%y')}".upper()
     aba_bytes, payer, payee = build_nab_aba(
         app, env, payee_label, lodgement_ref, super_payable, payment_date,
     )
