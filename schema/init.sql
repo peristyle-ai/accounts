@@ -298,6 +298,10 @@ CREATE TABLE IF NOT EXISTS quotes (
     ex_gst_amount NUMERIC(12, 2) NOT NULL,
     gst_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
     gst_type NUMERIC(3, 1) NOT NULL DEFAULT 0,
+    -- Why the document carries the GST treatment it carries. Stored with
+    -- the quote so the reason printed on the page cannot change when the
+    -- customer record is updated afterwards. See app/shared/tax.py.
+    gst_basis VARCHAR(32),
     total_amount NUMERIC(12, 2) NOT NULL,
     quote_date DATE NOT NULL,
     valid_until DATE,

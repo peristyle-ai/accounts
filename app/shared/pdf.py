@@ -118,6 +118,34 @@ def _logo_image(user, width=4*cm, height=2*cm):
 
 
 
+def _esc(text):
+    """Escape text for a reportlab `Paragraph`.
+
+    `Paragraph` parses a mini-markup language: `<b>` starts bold, `&amp;`
+    is an escaped ampersand. Customer-controlled text -- a customer name, a
+    line item description, a note -- is therefore MARKUP unless it is
+    escaped, and the consequences are not cosmetic:
+
+      * `<b>plus</b>` silently renders as bold, so the document shows
+        something the customer did not write;
+      * an unclosed `<b>` or an `<img src=...>` makes reportlab raise
+        ValueError, so the PDF route 500s and the quote cannot be produced
+        at all.
+
+    This helper is applied to every customer-controlled string that goes
+    into a Paragraph on the QUOTE document. The invoice path is left as it
+    is: its `description` field carries deliberate `<br/>` markup that
+    `_parse_line_items` relies on, so escaping it would change the
+    invoice's meaning. That is a separate piece of work.
+    """
+    if text is None:
+        return ''
+    return (str(text)
+            .replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;'))
+
+
 def _parse_line_items(description):
     """Parse a multi-line description into a list of (text, amount) tuples.
 
@@ -942,6 +970,15 @@ def generate_quote_pdf(user, quote):
     header block, same table styles) so a customer who has seen an invoice
     recognises the quote as the same document family. What it does NOT
     carry is bank details: a quote is a proposal, not a request for money.
+
+    When the quote has a RECURRING line (a monthly retainer), the totals
+    block shows the one-off and the recurring amounts separately, because
+    a single "TOTAL: $X" that silently includes one month of a retainer
+    reads as a one-off price.
+
+    Every customer-controlled string on this page is escaped through
+    `_esc` -- see that function for why an unescaped `<b>` in a line
+    description is a crash, not a cosmetic issue.
     """
     from reportlab.lib.enums import TA_RIGHT
     from decimal import Decimal
@@ -1027,24 +1064,27 @@ def generate_quote_pdf(user, quote):
 
     elements.append(Paragraph('<b>Quote To:</b>', styles['Heading3']))
     customer = quote.customer
-    customer_info = f"<b>{customer.name}</b><br/>"
+    customer_info = f"<b>{_esc(customer.name)}</b><br/>"
     if customer.contact_name:
-        customer_info += f"Attn: {customer.contact_name}<br/>"
+        customer_info += f"Attn: {_esc(customer.contact_name)}<br/>"
     if render_address(customer):
-        customer_info += f"{render_address(customer).replace(chr(10), '<br/>')}<br/>"
+        customer_info += f"{_esc(render_address(customer)).replace(chr(10), '<br/>')}<br/>"
     if customer.contact_email:
-        customer_info += f"Email: {customer.contact_email}<br/>"
+        customer_info += f"Email: {_esc(customer.contact_email)}<br/>"
     if customer.contact_number:
-        customer_info += f"Phone: {customer.contact_number}<br/>"
+        customer_info += f"Phone: {_esc(customer.contact_number)}<br/>"
     if customer.abn:
-        customer_info += f"ABN: {customer.abn}<br/>"
+        customer_info += f"ABN: {_esc(customer.abn)}<br/>"
     elements.append(Paragraph(customer_info, styles['Normal']))
     elements.append(Spacer(1, 0.5*cm))
 
     items_data = [['Description', 'Amount']]
     for line in (quote.lines or []):
+        description = str(line.get('description', ''))
+        if line.get('recurring'):
+            description = f"{description} (recurring {line.get('period', 'monthly')})"
         items_data.append([
-            Paragraph(str(line.get('description', '')), styles['Normal']),
+            Paragraph(_esc(description), styles['Normal']),
             f"${Decimal(str(line.get('amount', 0))):,.2f}",
         ])
     items_table = Table(items_data, colWidths=[12*cm, 4*cm])
@@ -1061,11 +1101,30 @@ def generate_quote_pdf(user, quote):
     elements.append(items_table)
     elements.append(Spacer(1, 0.3*cm))
 
-    totals_data = [
-        ['Subtotal (ex GST):', f"${quote.ex_gst_amount:.2f}"],
-        [f'GST ({float(quote.gst_type)*100:.0f}%):', f"${quote.gst_amount:.2f}"],
-        ['TOTAL:', f"${quote.total_amount:.2f}"],
-    ]
+    # A quote with a retainer must not present one TOTAL that silently
+    # includes one month of it: the customer would read the figure as a
+    # one-off price. So the totals block splits the one-off from the
+    # recurring amount and says that the total covers the FIRST period.
+    #
+    # Thousands separators are used throughout, including here, because
+    # the line items above already carry them ("$6,000.00"); a total
+    # that reads "$6100.00" beside a line that reads "$6,000.00" looks
+    # like a different number.
+    if quote.recurring_amount > 0:
+        totals_data = [
+            ['One-off subtotal (ex GST):', f"${quote.one_off_amount:,.2f}"],
+            [f'Recurring ({quote.recurring_period}, ex GST):',
+             f"${quote.recurring_amount:,.2f}"],
+            ['Subtotal, first period (ex GST):', f"${quote.ex_gst_amount:,.2f}"],
+        ]
+        total_label = 'TOTAL, first period:'
+    else:
+        totals_data = [
+            ['Subtotal (ex GST):', f"${quote.ex_gst_amount:,.2f}"],
+        ]
+        total_label = 'TOTAL:'
+    totals_data.append([f'GST ({float(quote.gst_type)*100:.0f}%):', f"${quote.gst_amount:,.2f}"])
+    totals_data.append([total_label, f"${quote.total_amount:,.2f}"])
     totals_table = Table(totals_data, colWidths=[12*cm, 4*cm])
     totals_table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
@@ -1078,20 +1137,29 @@ def generate_quote_pdf(user, quote):
     ]))
     elements.append(totals_table)
 
-    # A zero-GST quote to a customer with no ABN is usually an overseas
-    # customer, so say so on the document rather than leaving a bare $0.00
-    # line that reads like an error.
-    if Decimal(str(quote.gst_type)) == 0 and not (customer.abn or '').strip():
+    # A zero-GST quote must say WHY, in the words that match the actual
+    # reason -- "outside Australia" and "not registered" are different
+    # facts and only one of them is true for any given customer. The
+    # wording comes from app/shared/tax.py so the document and the API
+    # cannot disagree.
+    from app.shared.tax import gst_note_for_basis
+    # Render from the STORED basis, so the document says what it said
+    # when it was raised. A quote that changed its tax wording because
+    # the customer record was edited afterwards is a document that lies.
+    note = gst_note_for_basis(quote.gst_basis)
+    if not note and not quote.gst_basis:
+        # A quote raised before the basis was captured: fall back to the
+        # live record rather than printing nothing.
+        from app.shared.tax import gst_note
+        note = gst_note(customer, user, quote.gst_type)
+    if note:
         elements.append(Spacer(1, 0.4*cm))
-        elements.append(Paragraph(
-            '<i>No GST has been applied: the customer is not Australian GST registered.</i>',
-            styles['Normal']
-        ))
+        elements.append(Paragraph(f'<i>{_esc(note)}</i>', styles['Normal']))
 
     if quote.notes:
         elements.append(Spacer(1, 0.7*cm))
         elements.append(Paragraph('<b>Notes:</b>', styles['Heading3']))
-        elements.append(Paragraph(str(quote.notes).replace(chr(10), '<br/>'), styles['Normal']))
+        elements.append(Paragraph(_esc(quote.notes).replace(chr(10), '<br/>'), styles['Normal']))
 
     elements.append(Spacer(1, 1*cm))
     validity = f'This quotation is valid until {quote.valid_until}.' if quote.valid_until else 'This quotation is subject to confirmation.'

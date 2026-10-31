@@ -16,6 +16,14 @@ the thing the customer negotiates, so they must round-trip exactly -- you
 cannot rebuild a line item table from a string you have to parse. JSONB also
 means adding a per-line field later does not need a migration.
 
+A line may be RECURRING -- a monthly retainer rather than a one-off -- in
+which case it carries `"recurring": true` and `"period": "monthly"`. The
+stored line is still just a dict; the recurrence is expressed in the JSONB,
+so no schema change was needed to support it. The quote's totals cover the
+FIRST period (the one-off work plus the first month of the retainer), and
+the PDF shows the one-off and recurring subtotals separately so the customer
+never has to guess which is which.
+
 Amounts are computed, never accepted raw: the API takes line items and
 derives ex_gst / gst / total so the arithmetic cannot drift from the lines
 the customer actually sees.
@@ -31,6 +39,10 @@ from config import accounts_config
 
 
 QUOTE_STATUSES = ('draft', 'sent', 'accepted', 'declined', 'expired')
+
+# The recurrence periods a quote line may carry. A retainer is quoted for a
+# period, and the period is part of what the customer is agreeing to.
+RECURRING_PERIODS = ('monthly', 'quarterly', 'annually')
 
 # Statuses from which a quote may still be edited in place.
 EDITABLE_STATUSES = ('draft',)
@@ -55,6 +67,14 @@ class Quote(db.Model):
     ex_gst_amount = db.Column(db.Numeric(12, 2), nullable=False)
     gst_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
     gst_type = db.Column(db.Numeric(3, 1), nullable=False, default=0)
+
+    # WHY the document carries the GST treatment it carries: one of the
+    # BASIS_* codes in app/shared/tax.py. Stored with the quote so the
+    # reason printed on the page is the reason that applied when the
+    # quote was raised -- a document must not change its tax wording
+    # because the customer record was updated afterwards.
+    gst_basis = db.Column(db.String(32), nullable=True)
+
     total_amount = db.Column(db.Numeric(12, 2), nullable=False)
 
     quote_date = db.Column(db.Date, nullable=False)
@@ -98,12 +118,20 @@ class Quote(db.Model):
 
         Amounts are kept as STRINGS in storage (not floats) so that
         $1,000.10 does not become 1000.0999999999999 on the way back out.
+
+        A line may be recurring (a retainer rather than a one-off), which
+        adds `"recurring": true` and `"period": "<period>"` to the stored
+        dict. Every recurring line in one quote must share a period: a
+        quote that mixes a monthly retainer with an annual one cannot
+        show a single "recurring" subtotal, and quietly picking one would
+        be worse than refusing it.
         """
         if not isinstance(lines, list) or not lines:
             return None, 'At least one line item is required'
 
         out = []
         total = Decimal('0')
+        recurring_period = None
         for raw in lines:
             if not isinstance(raw, dict):
                 return None, 'Each line item must be an object'
@@ -123,11 +151,53 @@ class Quote(db.Model):
                 return None, f'Line item "{description}" has a negative amount'
             amount = amount.quantize(Decimal('0.01'))
             total += amount
-            out.append({'description': description, 'amount': str(amount)})
+
+            line = {'description': description, 'amount': str(amount)}
+
+            recurring = raw.get('recurring', False)
+            if recurring is not None and not isinstance(recurring, bool):
+                return None, f'Line item "{description}" has an invalid recurring flag'
+            if recurring:
+                period = str(raw.get('period') or 'monthly').strip().lower()
+                if period not in RECURRING_PERIODS:
+                    return None, (f'Line item "{description}" has an invalid '
+                                  f'recurrence period. Must be one of: '
+                                  f'{", ".join(sorted(RECURRING_PERIODS))}')
+                if recurring_period is None:
+                    recurring_period = period
+                elif recurring_period != period:
+                    return None, ('Recurring line items must all share the same '
+                                  'period (this quote mixes '
+                                  f'"{recurring_period}" and "{period}")')
+                line['recurring'] = True
+                line['period'] = period
+
+            out.append(line)
 
         if not out:
             return None, 'At least one line item is required'
         return out, None
+
+    @staticmethod
+    def split_lines(lines):
+        """Split stored lines into (one_off_lines, recurring_lines).
+
+        Both are lists of the stored line dicts. A line is recurring when
+        it carries `"recurring": true`.
+        """
+        one_off = []
+        recurring = []
+        for line in (lines or []):
+            (recurring if line.get('recurring') else one_off).append(line)
+        return one_off, recurring
+
+    @staticmethod
+    def line_total(lines):
+        """The sum of a list of stored lines, as a Decimal."""
+        total = Decimal('0')
+        for line in (lines or []):
+            total += Decimal(str(line.get('amount', '0')))
+        return total.quantize(Decimal('0.01'))
 
     @classmethod
     def next_quote_number(cls, user_id, as_of_date):
@@ -148,6 +218,28 @@ class Quote(db.Model):
                 highest = max(highest, int(tail))
         return f'{prefix}{highest + 1:04d}'
 
+    @property
+    def one_off_amount(self):
+        """The part of the quote that is a one-off (the ex-GST total of the
+        non-recurring lines)."""
+        one_off, _recurring = self.split_lines(self.lines)
+        return self.line_total(one_off)
+
+    @property
+    def recurring_amount(self):
+        """The recurring portion of the quote (the ex-GST total of the
+        recurring lines), per period."""
+        _one_off, recurring = self.split_lines(self.lines)
+        return self.line_total(recurring)
+
+    @property
+    def recurring_period(self):
+        """The period the recurring lines run on (None if none recur)."""
+        _one_off, recurring = self.split_lines(self.lines)
+        if not recurring:
+            return None
+        return recurring[0].get('period')
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -157,9 +249,13 @@ class Quote(db.Model):
             'quote_number': self.quote_number,
             'client_name': self.client_name,
             'lines': self.lines or [],
+            'one_off_amount': str(self.one_off_amount),
+            'recurring_amount': str(self.recurring_amount),
+            'recurring_period': self.recurring_period,
             'ex_gst_amount': str(self.ex_gst_amount),
             'gst_amount': str(self.gst_amount),
             'gst_type': str(self.gst_type),
+            'gst_basis': self.gst_basis,
             'total_amount': str(self.total_amount),
             'quote_date': self.quote_date.isoformat() if self.quote_date else None,
             'valid_until': self.valid_until.isoformat() if self.valid_until else None,
