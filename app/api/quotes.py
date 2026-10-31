@@ -19,6 +19,22 @@ and total are derived here (see `Quote.normalise_lines` and
 `Quote.calculate_gst`). If the arithmetic could drift from the lines the
 customer sees, the quote is not a quote -- it is a number.
 
+GST is DERIVED from the customer and the business unless the caller says
+otherwise (see `app/shared/tax.py`):
+
+  * omitted  -> derive: GST applies only when the business is registered,
+                the customer is a GST registrant, and the customer is in
+                Australia. A customer in the USA therefore gets a quote
+                with NO GST, without anyone having to remember to ask.
+  * explicit -> honoured, but a NON-zero rate is refused unless the
+                customer is actually registered for GST. Charging Australian
+                GST to an overseas or unregistered customer is not a
+                rounding error, it is a wrong document.
+
+A quote line may be RECURRING (a monthly retainer). The totals then cover
+the first period, and `one_off_amount` / `recurring_amount` / the PDF show
+the split so nobody has to guess which is which.
+
 Tenant scoping: every query is filtered by `user_id`, so a quote belonging to
 another tenant is a 404, not a 403 (matching the rest of the API).
 
@@ -41,6 +57,8 @@ from app.models.invoice import Invoice
 from app.models.quote import Quote, QUOTE_STATUSES
 from app.shared.decorators import api_key_required, log_activity
 from app.shared.roles import role_required
+from app.shared.tax import check_gst_type, derive_gst_type
+from app.shared.tax import gst_basis as gst_basis_for
 from app.shared.validators import validate_date_string, validate_uuid
 
 quotes_bp = Blueprint('quotes', __name__, url_prefix='/api/quotes')
@@ -133,11 +151,23 @@ def create_quote():
 
     try:
         from app.shared.validators import validate_gst_type
-        gst_type = validate_gst_type(data.get('gst_type', 0))
+        if data.get('gst_type') is None:
+            # Not stated: derive it from the customer and the business.
+            gst_type = derive_gst_type(customer, user)
+        else:
+            gst_type = validate_gst_type(data.get('gst_type'))
         quote_date = validate_date_string(data.get('quote_date'), required=True)
         valid_until = validate_date_string(data.get('valid_until'))
     except ValueError:
         return jsonify({'error': 'Invalid input'}), 400
+
+    gst_error = check_gst_type(customer, user, gst_type)
+    if gst_error:
+        return jsonify({'error': gst_error}), 400
+
+    # Capture WHY this quote carries the GST treatment it carries, so the
+    # reason on the page is fixed at the moment the quote is raised.
+    gst_basis = gst_basis_for(customer, user, gst_type)
 
     if valid_until is None:
         valid_until = quote_date + timedelta(days=DEFAULT_VALID_DAYS)
@@ -159,6 +189,7 @@ def create_quote():
         ex_gst_amount=ex_gst,
         gst_amount=gst,
         gst_type=gst_type,
+        gst_basis=gst_basis,
         total_amount=total,
         quote_date=quote_date,
         valid_until=valid_until,
@@ -210,33 +241,58 @@ def update_quote(quote_id):
 
     old_values = quote.to_dict()
 
+    # VALIDATE FIRST, THEN ASSIGN.
+    #
+    # Every value the caller sent is checked into a local variable before
+    # anything is written to the ORM object. The earlier version assigned
+    # as it went, which meant a request that was REJECTED (a bad
+    # gst_type, a bad quote_date) had already mutated the row. The
+    # mutation is flushed by the next query in the session, so the
+    # rejected request held a row lock on the quote until the session was
+    # torn down -- and any concurrent write to that quote blocked behind
+    # it. A 400 must not leave a lock behind.
+    new_lines = quote.lines
     if 'lines' in data:
         lines, error = _parse_lines(data)
         if error:
             return jsonify({'error': error}), 400
-        quote.lines = lines
+        new_lines = lines
 
     try:
         from app.shared.validators import validate_gst_type
-        if 'gst_type' in data:
-            quote.gst_type = validate_gst_type(data.get('gst_type'))
-        if 'quote_date' in data:
-            quote.quote_date = validate_date_string(data.get('quote_date'), required=True)
-        if 'valid_until' in data:
-            quote.valid_until = validate_date_string(data.get('valid_until'))
+        new_gst_type = (validate_gst_type(data.get('gst_type'))
+                        if 'gst_type' in data else quote.gst_type)
+        new_quote_date = (validate_date_string(data.get('quote_date'), required=True)
+                          if 'quote_date' in data else quote.quote_date)
+        new_valid_until = (validate_date_string(data.get('valid_until'))
+                           if 'valid_until' in data else quote.valid_until)
     except ValueError:
         return jsonify({'error': 'Invalid input'}), 400
 
+    new_client_name = quote.client_name
+    if 'client_name' in data:
+        new_client_name = str(data.get('client_name') or '').strip()
+        if not new_client_name:
+            return jsonify({'error': 'Client name is required'}), 400
+
+    if new_valid_until and new_quote_date and new_valid_until < new_quote_date:
+        return jsonify({'error': 'valid_until cannot be before quote_date'}), 400
+
+    # The GST check needs the customer and the caller, not the new
+    # values, so it can run before anything is assigned.
+    gst_error = check_gst_type(quote.customer, request.current_user, new_gst_type)
+    if gst_error:
+        return jsonify({'error': gst_error}), 400
+
+    # Everything checked. Now write.
+    quote.lines = new_lines
+    quote.gst_type = new_gst_type
+    quote.gst_basis = gst_basis_for(quote.customer, request.current_user, new_gst_type)
+    quote.quote_date = new_quote_date
+    quote.valid_until = new_valid_until
+    quote.client_name = new_client_name
     if 'notes' in data:
         quote.notes = data.get('notes')
-    if 'client_name' in data:
-        client_name = str(data.get('client_name') or '').strip()
-        if not client_name:
-            return jsonify({'error': 'Client name is required'}), 400
-        quote.client_name = client_name
-
-    if quote.valid_until and quote.quote_date and quote.valid_until < quote.quote_date:
-        return jsonify({'error': 'valid_until cannot be before quote_date'}), 400
 
     ex_gst, gst, total = _derive_amounts(quote.lines or [], quote.gst_type)
     quote.ex_gst_amount = ex_gst
