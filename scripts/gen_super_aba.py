@@ -74,13 +74,19 @@ PROCESS_DATE = (date.fromisoformat(os.environ['PROCESS_DATE'])
 #
 # AMOUNT and LODGEMENT_REF are REQUIRED -- there is no default.
 #
-# The old defaults were AMOUNT='228.00' and LODGEMENT_REF='JESS SUPER
-# 140914'. The amount happened to be right for one employee's weekly
-# contribution and the lodgement reference was a SEPTEMBER artefact:
-# a run that forgot to pass them wrote a stale reference into a file
-# destined for a bank. This is the same class as the old
-# `payroll@example.com` sender default -- a placeholder, never a real
-# address -- so both are now required.
+# The old defaults were a real employee's weekly super contribution
+# amount and a September lodgement reference naming that employee. The
+# amount happened to be right for one pay run and the lodgement reference
+# was a SEPTEMBER artefact: a run that forgot to pass them wrote a stale
+# reference into a file destined for a bank. This is the same class as
+# the old `payroll@example.com` sender default -- a placeholder, never a
+# real address -- so both are now required.
+#
+# The old values are deliberately NOT quoted here. This repository is
+# PUBLIC: a lodgement reference naming an employee is payroll data, and
+# moving it out of the code but into a comment is still publishing it.
+# The test that guards this class matches the SHAPE of a stale reference
+# rather than one value.
 #
 # The source of truth is the `accounts.super_payments` row (its amount
 # and its pay event's period end). The caller states the values it is
