@@ -398,7 +398,8 @@ def load_employer_from_config():
         stp = {}
     for key in ('entity_abn', 'branch_id', 'bms_id', 'previous_bms_id',
                 'product_id', 'payrun_time', 'income_stream_code',
-                'income_stream_country_code', 'final_eoy_pay_indicator'):
+                'income_stream_country_code', 'final_eoy_pay_indicator',
+                'lodgement_ref_prefix'):
         value = stp.get(key)
         if value not in (None, ''):
             employer[key] = str(value)

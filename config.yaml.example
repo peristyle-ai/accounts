@@ -85,6 +85,13 @@ stp:
   # Branch ID within the payroll system
   branch_id: "1"
 
+  # The prefix of the superannuation lodgement reference -- the text
+  # that names the employee so the super fund can match the payment
+  # (the reference is "<prefix> SUPER <period end>"). It is deployment
+  # data: leave it blank here, and set it in YOUR config.yaml. A real
+  # person's name belongs in that file, never in this repository.
+  lodgement_ref_prefix: ""
+
   # Previous BMS ID - only for employers migrated from another system
   previous_bms_id: ""
 

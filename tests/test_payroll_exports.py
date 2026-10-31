@@ -77,6 +77,76 @@ def _fake_user():
     )
 
 
+class TestTraceFields:
+    """The trace fields (positions 81-120) identify the ORIGINATING account.
+
+    These are the fields the bank reconciles the debit against. The ABA
+    files NAB actually accepted for this payer carried them populated;
+    a file with a blank trace account cannot be tied back to the payer.
+    """
+
+    def _record(self, **kw):
+        from app.shared.aba import build_detail_record
+        args = dict(
+            bsb='123-456',
+            account_number='87654321',
+            account_name='Jane Doe',
+            amount='1500.50',
+            lodgement_ref='JP 170926',
+            payer_bsb='111-222',
+            payer_account_number='13572468',
+            payer_name='Example Co',
+        )
+        args.update(kw)
+        return build_detail_record(**args)
+
+    def test_trace_account_number_is_populated(self):
+        record = self._record()
+        # Positions 88-96: the payer's account number.
+        assert record[87:96] == ' 13572468'
+
+    def test_name_of_remitter_is_populated(self):
+        record = self._record()
+        # Positions 97-112: the payer's name.
+        assert record[96:112] == 'Example Co      '
+
+    def test_withholding_tax_field_is_zero_filled(self):
+        record = self._record()
+        # Positions 113-120: amount of withholding tax, zero for payroll.
+        assert record[112:120] == '00000000'
+
+    def test_trace_bsb_is_still_the_payers(self):
+        record = self._record()
+        assert record[80:87] == '111-222'
+
+    def test_record_still_120_chars(self):
+        assert len(self._record()) == 120
+
+    def test_blank_payer_details_do_not_break_the_record(self):
+        """A payer with no account details still yields a valid record."""
+        record = self._record(payer_bsb='', payer_account_number='',
+                               payer_name='')
+        assert len(record) == 120
+        assert record[87:96] == ' ' * 9
+        assert record[96:112] == ' ' * 16
+        assert record[112:120] == '00000000'
+
+    def test_build_aba_file_carries_payer_trace(self):
+        """The whole-file builder passes the payer's identity through."""
+        from app.shared.aba import build_aba_file
+        data = build_aba_file(
+            _fake_user(),
+            [{'bsb': '123-456', 'account_number': '87654321',
+              'account_name': 'Jane Doe', 'amount': '1500.50',
+              'lodgement_ref': 'JP 170926'}],
+            date(2026, 9, 22),
+        )
+        detail = data.decode('ascii').split('\r\n')[1]
+        # _fake_user(): account_number_plain='12345678', account_name='Example Co'
+        assert detail[87:96] == ' 12345678'
+        assert detail[96:112] == 'Example Co      '
+
+
 class TestBsaFormat:
     """BSB normalisation: accept multiple input formats, emit NNN-NNN."""
 
