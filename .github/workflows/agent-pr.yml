@@ -1,0 +1,88 @@
+# Open a pull request for an agent's branch.
+#
+# WHY THIS EXISTS
+# ---------------
+# The agents working in this repository (clawbie, evie) are not allowed
+# to push to `main`, and they are not allowed to merge. Branch
+# protection requires a pull request plus one approval from a code
+# owner, and the only code owner is the Peristyle account.
+#
+# But an agent cannot open a pull request itself: a deploy key is a GIT
+# credential only -- it cannot talk to the API -- and giving an agent
+# an API token would let it open a pull request as an account that
+# could also approve it.
+#
+# So this workflow does it. The agent pushes a branch named
+# `agent/<something>`; this workflow opens the pull request using the
+# repository's own GITHUB_TOKEN. The pull request is therefore authored
+# by `github-actions[bot]`, which cannot approve its own pull request
+# and is not a code owner -- so the only way it can ever be merged is
+# for Grove to approve it.
+#
+# WHAT THE AGENT PROVIDES
+# -----------------------
+# Two files in the pushed branch:
+#
+#   .agent-pr/title.md    one line -- the pull request title
+#   .agent-pr/body.md     the description (markdown)
+#
+# Both are optional; without them the pull request gets a generic
+# title and body. The agent's branch should also carry its change --
+# this workflow does not create the commit.
+name: agent-pr
+on:
+  push:
+    branches:
+      - 'agent/**'
+      - 'fix/**'
+  # So the pull request can be opened (or re-opened) on demand.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    # One pull request per branch: a second push updates it rather
+    # than opening a second one.
+    concurrency:
+      group: agent-pr-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: open or update the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+
+          title="agent change: ${BRANCH#agent/}"
+          body="Proposed by an agent working in this repository. Opened automatically by the \`agent-pr\` workflow, so it needs an approval from a code owner before it can merge."
+          if [ -f .agent-pr/title.md ]; then
+            title="$(head -1 .agent-pr/title.md)"
+          fi
+          if [ -f .agent-pr/body.md ]; then
+            body="$(cat .agent-pr/body.md)"
+          fi
+
+          # gh pr create refuses if a pull request already exists for
+          # the branch -- update it instead of failing the workflow.
+          # --state open: a CLOSED pull request for the same branch must
+          # not be found here, or the workflow would try to edit a closed
+          # one instead of opening a fresh one.
+          number="$(gh pr list --head "$BRANCH" --base "$BASE" --state open \
+                      --json number --jq '.[0].number // empty')"
+          if [ -n "$number" ]; then
+            echo "updating pull request #$number"
+            gh pr edit "$number" --title "$title" --body "$body"
+          else
+            echo "opening a pull request for $BRANCH"
+            gh pr create --head "$BRANCH" --base "$BASE" \
+                         --title "$title" --body "$body"
+          fi
