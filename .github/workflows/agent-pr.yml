@@ -35,16 +35,6 @@ on:
     branches:
       - 'agent/**'
       - 'fix/**'
-      # The pre-push guard permits refs/heads/{feat,fix,publish}/* to the
-      # PUBLIC remote, so a feat/ or publish/ branch is a legitimate PR
-      # branch -- but until this list included them, the workflow never
-      # fired for them and NO pull request was ever opened. The branch
-      # would sit published with no way to merge it, which is exactly
-      # how a feat/quotes branch ended up with no PR: it was pushed, the
-      # guard allowed it, and the workflow that was supposed to open the
-      # PR never triggered.
-      - 'feat/**'
-      - 'publish/**'
   # So the pull request can be opened (or re-opened) on demand.
   workflow_dispatch:
 
