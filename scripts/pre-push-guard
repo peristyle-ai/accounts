@@ -104,10 +104,39 @@ is_pure_extension() {
   return 0
 }
 
+# The tree about to be PUBLISHED must carry no identifier. This is a
+# CONTENT check, not a structural one: the guard below proves which
+# refs may be pushed and that the history extends the published main.
+# Neither can see a customer's name inside a file.
+#
+# The scan runs against the PUSHED TREE, not the working tree: a branch
+# may be checked out at something else entirely, and what is published
+# is the tree of the commit being pushed.
+scan_pushed_tree() {
+  local sha="$1" repo_root scanner
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  scanner="$repo_root/scripts/check_no_identifiers.py"
+  if [ ! -f "$scanner" ]; then
+    echo "         (no identifier scanner found -- skipping)" >&2
+    return 0
+  fi
+  if ! python3 "$scanner" --repo "$repo_root" --commit "$sha" >/tmp/ident_scan.$$ 2>&1; then
+    echo "REFUSED: the tree being pushed carries an identifier." >&2
+    sed 's/^/         /' /tmp/ident_scan.$$ >&2
+    rm -f /tmp/ident_scan.$$
+    return 1
+  fi
+  rm -f /tmp/ident_scan.$$
+  return 0
+}
+
 if is_public_remote "$remote"; then
   while read -r _local_ref _local_sha _remote_ref _remote_sha; do
     if [ "$_local_sha" = "$ZERO_SHA" ]; then
       continue
+    fi
+    if ! scan_pushed_tree "$_local_sha"; then
+      exit 1
     fi
     if [ "$_remote_ref" = "refs/heads/main" ]; then
       continue
