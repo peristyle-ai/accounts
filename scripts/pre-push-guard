@@ -145,22 +145,99 @@ is_pure_extension() {
 # The scan runs against the PUSHED TREE, not the working tree: a branch
 # may be checked out at something else entirely, and what is published
 # is the tree of the commit being pushed.
-scan_pushed_tree() {
-  local sha="$1" repo_root scanner
-  repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
-  scanner="$repo_root/scripts/check_no_identifiers.py"
-  if [ ! -f "$scanner" ]; then
-    echo "         (no identifier scanner found -- skipping)" >&2
-    return 0
-  fi
-  if ! python3 "$scanner" --repo "$repo_root" --commit "$sha" >/tmp/ident_scan.$$ 2>&1; then
+#
+# WHERE THE SCANNER COMES FROM -- this is the part that failed open.
+#
+# The first version of this looked for the scanner in the WORKING
+# TREE. That made the gate's presence depend on which checkout the
+# push happened from: the prod checkout sits on `main`, which (before
+# the gate was merged) had no scanner at all, so every push from it
+# printed "(no identifier scanner found -- skipping)" and published
+# UNSCANNED. A gate that is absent was being treated as a gate that
+# passes -- and the skip was announced in parentheses, which is not how
+# a safety control should report itself.
+#
+# So the scanner is located in the PUSHED TREE and in the PUBLISHED
+# MAIN, never in the working tree:
+#
+#   - published main has one, pushed tree does not  -> REFUSE. A branch
+#     must not remove the gate.
+#   - published main has one, pushed tree has one   -> run BOTH. The
+#     published one is the reviewed one, so a branch cannot weaken the
+#     gate by shipping a scanner that finds nothing.
+#   - published main has none, pushed tree has one  -> run the pushed
+#     one. This is the branch that INTRODUCES the gate.
+#   - neither has one                              -> warn loudly and
+#     allow: there is no gate to bypass, and refusing would make the
+#     repository unpublishable until the gate lands.
+#
+# Every scanner is run against the PUSHED TREE (--commit), so what is
+# checked is exactly what would be published.
+IDENT_PATH="scripts/check_no_identifiers.py"
+
+run_scanner() {  # run_scanner <scanner-file> <sha> <repo-root>
+  local scanner="$1" sha="$2" repo_root="$3" out
+  if ! out="$(python3 "$scanner" --repo "$repo_root" --commit "$sha" 2>&1)"; then
     echo "REFUSED: the tree being pushed carries an identifier." >&2
-    sed 's/^/         /' /tmp/ident_scan.$$ >&2
-    rm -f /tmp/ident_scan.$$
+    printf '%s\n' "$out" | sed 's/^/         /' >&2
     return 1
   fi
-  rm -f /tmp/ident_scan.$$
   return 0
+}
+
+scan_pushed_tree() {
+  local sha="$1" repo_root published tmp_push tmp_pub have_push=0 have_pub=0
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  published="$(published_main_sha)"
+
+  tmp_push="$(mktemp "${TMPDIR:-/tmp}/ident_scanner.XXXXXX.py")" || return 1
+  tmp_pub="$(mktemp "${TMPDIR:-/tmp}/ident_scanner_pub.XXXXXX.py")" || return 1
+
+  # The scanner from the PUSHED TREE.
+  if git cat-file -e "${sha}:${IDENT_PATH}" 2>/dev/null; then
+    git show "${sha}:${IDENT_PATH}" >"$tmp_push" 2>/dev/null && have_push=1
+  fi
+
+  # The scanner from the PUBLISHED MAIN -- the reviewed one.
+  if [ -n "$published" ] && git cat-file -e "${published}:${IDENT_PATH}" 2>/dev/null; then
+    git show "${published}:${IDENT_PATH}" >"$tmp_pub" 2>/dev/null && have_pub=1
+  fi
+
+  if [ "$have_pub" = 1 ] && [ "$have_push" = 0 ]; then
+    echo "REFUSED: the tree being pushed does not carry the identifier" >&2
+    echo "         scanner, but the published main does. A branch must" >&2
+    echo "         not remove the gate." >&2
+    rm -f "$tmp_push" "$tmp_pub"
+    return 1
+  fi
+
+  if [ "$have_push" = 0 ] && [ "$have_pub" = 0 ]; then
+    echo "         WARNING: no identifier scanner is available (neither in" >&2
+    echo "         the tree being pushed nor in the published main), so" >&2
+    echo "         this push is NOT scanned for identifiers. The gate does" >&2
+    echo "         not exist yet in this repository's history." >&2
+    rm -f "$tmp_push" "$tmp_pub"
+    return 0
+  fi
+
+  local rc=0 same=0
+  # The two copies are the same file when their bytes match.
+  if [ "$have_pub" = 1 ] && [ "$have_push" = 1 ]; then
+    cmp -s "$tmp_pub" "$tmp_push" && same=1
+  fi
+
+  if [ "$have_pub" = 1 ]; then
+    run_scanner "$tmp_pub" "$sha" "$repo_root" || rc=1
+  fi
+  # The pushed tree's own scanner is run too, unless it is byte-identical
+  # to the published one that has just been run. A branch that ships a
+  # WEAKENED scanner cannot silence the published one.
+  if [ "$have_push" = 1 ] && [ "$same" = 0 ]; then
+    run_scanner "$tmp_push" "$sha" "$repo_root" || rc=1
+  fi
+
+  rm -f "$tmp_push" "$tmp_pub"
+  return $rc
 }
 
 if is_public_remote "$remote"; then
