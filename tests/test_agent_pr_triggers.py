@@ -30,11 +30,21 @@ def guard_permitted_patterns():
 
 
 def workflow_trigger_patterns():
-    """The branch patterns the agent-pr workflow triggers on."""
-    text = WORKFLOW.read_text(encoding="utf-8")
-    m = re.search(r"branches:\s*\n((?:\s*-\s*'[^']+'\s*\n)+)", text)
-    assert m, "the workflow no longer declares a branches: list"
-    return {p.strip().strip("'") for p in re.findall(r"-\s*'([^']+)'", m.group(1))}
+    """The branch patterns the agent-pr workflow triggers on.
+
+    Parsed as YAML rather than by regex: a comment line between the
+    entries is enough to stop a naive pattern-matching regex, and a
+    scanner that silently stops at a comment is worse than none.
+    """
+    import yaml
+
+    data = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    # PyYAML reads the `on:` key as the boolean True.
+    triggers = data.get("on", data.get(True))
+    assert triggers, "the workflow no longer declares its triggers"
+    branches = (triggers.get("push") or {}).get("branches")
+    assert branches, "the workflow no longer triggers on a push to any branch"
+    return set(branches)
 
 
 def test_every_guarded_pattern_has_a_workflow_trigger():
