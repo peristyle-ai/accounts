@@ -149,7 +149,9 @@ def _quote(client, auth_headers, made_quotes, customer_id, **overrides):
 def test_overseas_customer_gets_no_gst_by_default(client, auth_headers, made_customers, made_quotes):
     """A customer outside Australia gets a quote with NO GST.
 
-    This is the case that started the work: a customer outside Australia
+    This is the case that started the work: a customer outside Australia,
+    so no Australian GST applies. The case is the work; the customer is
+    not named here, because this repository is public.
     """
     cid = _make_customer(client, auth_headers, made_customers,
                          country='United States', gst=False)
