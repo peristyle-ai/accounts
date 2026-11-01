@@ -44,11 +44,13 @@ impossible to express.
 """
 
 import logging
+import os
 import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, current_app, request, jsonify, send_file
+from werkzeug.utils import secure_filename
 
 logger = logging.getLogger(__name__)
 
@@ -348,6 +350,63 @@ def delete_quote(quote_id):
     db.session.commit()
 
     return jsonify({'message': 'Quote deleted'}), 200
+
+
+@quotes_bp.route('/<quote_id>/upload', methods=['POST'])
+@api_key_required
+def upload_quote_attachment(quote_id):
+    """Store the PDF that was actually transmitted, against the quote.
+
+    WHY this exists: the quote PDF is rendered on demand, and two renders
+    are different files (document id and creation timestamp). So the
+    rendered PDF is not a record of what the customer holds -- only the
+    stored bytes are. This route puts those bytes somewhere the system
+    owns, and `attachment_path` says where.
+
+    It also makes `sent_document_sha256` worth having: a hash of a file
+    nobody can retrieve again proves nothing.
+
+    The stored path is relative to the upload folder ("uploads/quotes/
+    <quote id>_<name>"), which is what the /uploads/ route serves and
+    what the tenant-scoping check resolves ownership from.
+    """
+    quote, status = _get_quote(quote_id)
+    if quote is None:
+        return jsonify({'error': 'Invalid quote ID' if status == 400 else 'Quote not found'}), status
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    filename = secure_filename(file.filename)
+    allowed_extensions = {'pdf', 'png', 'jpg', 'jpeg'}
+    if '.' not in filename or filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
+        return jsonify({'error': 'Invalid file type. Allowed: PDF, PNG, JPG'}), 400
+
+    upload_folder = os.path.join(current_app.config.get('UPLOAD_FOLDER', 'uploads'), 'quotes')
+    os.makedirs(upload_folder, exist_ok=True)
+
+    filepath = os.path.join(upload_folder, f'{quote_id}_{filename}')
+    file.save(filepath)
+
+    old_values = quote.to_dict()
+    quote.attachment_path = filepath
+
+    log_activity(
+        user_id=request.current_user.id,
+        action='UPDATE',
+        table_name='quotes',
+        record_id=quote.id,
+        old_values=old_values,
+        new_values=quote.to_dict(),
+        ip_address=request.remote_addr,
+    )
+    db.session.commit()
+
+    return jsonify({'message': 'File uploaded', 'quote': quote.to_dict()}), 200
 
 
 @quotes_bp.route('/<quote_id>/pdf', methods=['GET'])
