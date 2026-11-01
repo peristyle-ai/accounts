@@ -40,7 +40,14 @@ git config user.name test
 git config user.email test@example.invalid
 git config commit.gpgsign false
 echo a > a.txt
-git add a.txt
+# The PUBLISHED ROOT carries the scanner, because once the gate has been
+# merged that is what main looks like -- and the rules the guard applies
+# differ depending on whether the published main has a scanner. A fixture
+# where main does NOT have one would exercise the wrong branch of the
+# logic and let a broken guard pass.
+mkdir -p scripts
+cp "$REPO_ROOT/scripts/check_no_identifiers.py" scripts/check_no_identifiers.py
+git add a.txt scripts/check_no_identifiers.py
 git commit -q -m "A: the published root"
 A=$(git rev-parse HEAD)
 git branch -M main
@@ -77,12 +84,7 @@ GRAFTED=$(git rev-parse HEAD)
 # a branch that is STRUCTURALLY fine -- it descends from the published
 # main, so every ancestry and parents rule passes -- but whose TREE
 # carries a customer's identifier. Only a CONTENT check can refuse it.
-# The scanner is copied into the fixture so the guard finds it.
-mkdir -p scripts
-cp "$REPO_ROOT/scripts/check_no_identifiers.py" scripts/check_no_identifiers.py
 git checkout -q -b feat/has-identifier "$PUBLISHED"
-git add scripts/check_no_identifiers.py
-git commit -q -m "D: the scanner itself"
 # The sample names are SYNTHETIC on purpose, and assembled by printf
 # from separate arguments. A regression fixture that spelled the name
 # out would put that name back into a tracked file -- which is the very
@@ -97,6 +99,33 @@ printf 'contact %s%s@%s%s\n' \
 git add leak.txt
 git commit -q -m "E: a branch carrying a customer identifier"
 IDENT=$(git rev-parse HEAD)
+
+# A branch that ships a WEAKENED scanner -- one that finds nothing --
+# while the PUBLISHED main carries the real one. The guard must run the
+# published scanner too, so the weakening buys nothing.
+git checkout -q -b feat/weak-scanner "$PUBLISHED"
+cat > scripts/check_no_identifiers.py <<'WEAKEOF'
+#!/usr/bin/env python3
+# A scanner that never finds anything.
+import sys
+print("identifier scan: 0 finding(s)")
+print("IDENTIFIER SCAN GREEN")
+sys.exit(0)
+WEAKEOF
+# The identifier rides along with the weakened scanner -- that is the
+# realistic attack: silence the scanner AND publish the name.
+printf 'This is the case that started the work: %s%s %s%s\n' \
+  "Nor" "thwind" "Tra" "ding Inc." > leak.txt
+git add scripts/check_no_identifiers.py leak.txt
+git commit -q -m "G: a branch that ships a weakened scanner"
+WEAK=$(git rev-parse HEAD)
+
+# A branch that DELETES the scanner the published main carries. That is
+# the gate being removed, so it must be REFUSED.
+git checkout -q -b fix/drops-scanner "$PUBLISHED"
+git rm -q scripts/check_no_identifiers.py
+git commit -q -m "H: a branch that removes the gate"
+DROPS=$(git rev-parse HEAD)
 
 echo "pre-push guard self-test"
 echo
@@ -130,6 +159,15 @@ check "a non-public remote is not governed by the guard" 0 origin \
 # refuse it.
 check "a structurally valid branch carrying an identifier is REFUSED" 1 github \
   "refs/heads/feat/has-identifier $IDENT refs/heads/feat/has-identifier $PUBLISHED"
+
+# The scanner in the PUBLISHED main is the one that must not be
+# silenced. A branch shipping a scanner that finds nothing must still be
+# REFUSED, because the published scanner catches the identifier.
+check "a branch shipping a WEAKENED scanner is still REFUSED" 1 github \
+  "refs/heads/feat/weak-scanner $WEAK refs/heads/feat/weak-scanner $PUBLISHED"
+
+check "a branch that DELETES the gate is REFUSED" 1 github \
+  "refs/heads/fix/drops-scanner $DROPS refs/heads/fix/drops-scanner $PUBLISHED"
 
 echo
 echo "passed: $pass   failed: $fail"
