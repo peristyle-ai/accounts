@@ -44,6 +44,7 @@ impossible to express.
 """
 
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -54,7 +55,7 @@ logger = logging.getLogger(__name__)
 from app.models import db, get_utc_now
 from app.models.customer import Customer
 from app.models.invoice import Invoice
-from app.models.quote import Quote, QUOTE_STATUSES
+from app.models.quote import Quote, QUOTE_SENT_VIAS, QUOTE_STATUSES
 from app.shared.decorators import api_key_required, log_activity
 from app.shared.roles import role_required
 from app.shared.tax import check_gst_type, derive_gst_type
@@ -65,6 +66,11 @@ quotes_bp = Blueprint('quotes', __name__, url_prefix='/api/quotes')
 
 # Default validity of a quote, in days, when the caller does not say.
 DEFAULT_VALID_DAYS = 30
+
+# The hash of a transmitted document: 64 hex characters. A sha256 digest
+# is written by `sha256sum`, so this is the shape a person pasting the
+# output of that command actually produces.
+_SHA256_RE = re.compile(r'^[0-9a-f]{64}$')
 
 
 def _get_quote(quote_id):
@@ -365,6 +371,30 @@ def generate_quote_pdf(quote_id):
 @quotes_bp.route('/<quote_id>/mark-sent', methods=['POST'])
 @api_key_required
 def mark_quote_sent(quote_id):
+    """Mark a quote as sent, recording HOW, WHERE and WHICH BYTES.
+
+    The optional body carries the transmission record:
+
+        sent_at               ISO timestamp of the TRANSMISSION (not of
+                              this update). A quote a person sent from
+                              their own mail client an hour ago was
+                              transmitted an hour ago; defaulting to now()
+                              would date the transmission by when someone
+                              remembered to record it.
+        sent_via              one of Quote.SENT_VIAS. The distinction that
+                              matters is `email_system` (this application
+                              sent it, so the mail server holds the
+                              delivery record) versus `email_manual` (a
+                              person sent it from their own client, and
+                              there is nothing to check but this row).
+        sent_to               the address it went to.
+        sent_document_sha256  sha256 of the exact PDF bytes transmitted.
+
+    All four are optional and independent: a caller that only flips the
+    status gets exactly the old behaviour, and a caller that knows the
+    details records them. Nothing is inferred -- an unrecorded
+    transmission stays unrecorded rather than being guessed at.
+    """
     quote, status = _get_quote(quote_id)
     if quote is None:
         return jsonify({'error': 'Invalid quote ID' if status == 400 else 'Quote not found'}), status
@@ -375,9 +405,51 @@ def mark_quote_sent(quote_id):
             'status': quote.status,
         }), 409
 
+    data = request.get_json(silent=True) or {}
+
+    # VALIDATE FIRST, THEN ASSIGN -- a rejected request must not have
+    # already mutated the row (see the update route for the same rule).
+    new_sent_at = quote.sent_at
+    if data.get('sent_at'):
+        try:
+            new_sent_at = datetime.fromisoformat(
+                str(data['sent_at']).replace('Z', '+00:00'))
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid sent_at timestamp'}), 400
+        if new_sent_at.tzinfo is None:
+            new_sent_at = new_sent_at.replace(tzinfo=timezone.utc)
+
+    new_sent_via = quote.sent_via
+    if 'sent_via' in data:
+        via = (data.get('sent_via') or '').strip().lower() or None
+        if via is not None and via not in QUOTE_SENT_VIAS:
+            return jsonify({
+                'error': f'Invalid sent_via. Must be one of: {", ".join(QUOTE_SENT_VIAS)}',
+            }), 400
+        new_sent_via = via
+
+    new_sent_to = quote.sent_to
+    if 'sent_to' in data:
+        to = (data.get('sent_to') or '').strip() or None
+        if to is not None and len(to) > 500:
+            return jsonify({'error': 'sent_to is too long'}), 400
+        new_sent_to = to
+
+    new_sha = quote.sent_document_sha256
+    if 'sent_document_sha256' in data:
+        sha = (data.get('sent_document_sha256') or '').strip().lower() or None
+        if sha is not None and not _SHA256_RE.match(sha):
+            return jsonify({
+                'error': 'sent_document_sha256 must be 64 hex characters',
+            }), 400
+        new_sha = sha
+
     old_values = quote.to_dict()
     quote.status = 'sent'
-    quote.sent_at = get_utc_now()
+    quote.sent_at = new_sent_at or get_utc_now()
+    quote.sent_via = new_sent_via
+    quote.sent_to = new_sent_to
+    quote.sent_document_sha256 = new_sha
 
     log_activity(
         user_id=request.current_user.id,

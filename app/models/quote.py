@@ -44,6 +44,23 @@ QUOTE_STATUSES = ('draft', 'sent', 'accepted', 'declined', 'expired')
 # period, and the period is part of what the customer is agreeing to.
 RECURRING_PERIODS = ('monthly', 'quarterly', 'annually')
 
+# How a quote left the building. The distinction that carries the evidential
+# weight is `email_system` versus `email_manual`:
+#
+#   email_system   THIS APPLICATION sent it. The mail server holds the
+#                  delivery record -- a message id, a delivery timestamp and
+#                  the bytes -- so the transmission can be checked against
+#                  something outside this database.
+#   email_manual   A PERSON sent it from their own mail client. There is no
+#                  delivery record anywhere: this row is the only evidence
+#                  that it happened, which is exactly why it has to say so.
+#   portal         Uploaded to a customer portal.
+#   other          Something else, described in the notes.
+#
+# "Sent" without this distinction makes those two indistinguishable, and
+# they are not the same fact.
+QUOTE_SENT_VIAS = ('email_system', 'email_manual', 'portal', 'other')
+
 # Statuses from which a quote may still be edited in place.
 EDITABLE_STATUSES = ('draft',)
 
@@ -87,6 +104,39 @@ class Quote(db.Model):
     sent_at = db.Column(db.DateTime(timezone=True), nullable=True)
     accepted_at = db.Column(db.DateTime(timezone=True), nullable=True)
     declined_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    # --- the transmission record -------------------------------------------
+    #
+    # A quote is a DOCUMENT, and "it was sent" is a claim about a document
+    # that left the building. `status` and `sent_at` record only that the
+    # system was told it went out. These three record the transmission
+    # itself, and each answers a question the other two cannot:
+    #
+    #   sent_via            HOW it left -- and, the distinction that
+    #                       actually matters, whether the SYSTEM sent it or
+    #                       a person did. A system send leaves a record in
+    #                       the mail server's Sent folder; a person sending
+    #                       it from their own client leaves nothing to
+    #                       check. "Sent" alone makes those two
+    #                       indistinguishable, and they are not the same
+    #                       evidential fact.
+    #   sent_to             WHERE it went. The customer's contact address is
+    #                       a standing record of the customer, not a record
+    #                       of this transmission; it can differ, and it can
+    #                       change later.
+    #   sent_document_sha256 WHICH BYTES went out. The quote PDF is
+    #                       rendered on demand, so re-rendering produces
+    #                       different bytes (document id and creation
+    #                       timestamp). Two renders of the same quote are
+    #                       different files. Without a hash of the
+    #                       transmitted artefact there is no way to prove
+    #                       later what the recipient actually holds.
+    #
+    # All nullable: a quote raised before these columns existed has no
+    # transmission record, and that is the truth about it.
+    sent_via = db.Column(db.String(32), nullable=True)
+    sent_to = db.Column(db.String(500), nullable=True)
+    sent_document_sha256 = db.Column(db.String(64), nullable=True)
 
     # Set when the quote has been converted into an invoice, so the same
     # scope can never be invoiced twice by accident.
@@ -263,6 +313,9 @@ class Quote(db.Model):
             'notes': self.notes,
             'attachment_path': self.attachment_path,
             'sent_at': self.sent_at.isoformat() if self.sent_at else None,
+            'sent_via': self.sent_via,
+            'sent_to': self.sent_to,
+            'sent_document_sha256': self.sent_document_sha256,
             'accepted_at': self.accepted_at.isoformat() if self.accepted_at else None,
             'declined_at': self.declined_at.isoformat() if self.declined_at else None,
             'converted_invoice_id': self.converted_invoice_id,

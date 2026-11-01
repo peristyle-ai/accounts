@@ -309,6 +309,13 @@ CREATE TABLE IF NOT EXISTS quotes (
     notes TEXT,
     attachment_path VARCHAR(500),
     sent_at TIMESTAMPTZ,
+    -- The transmission record: HOW it left, WHERE it went, and WHICH BYTES
+    -- went out. `status`/`sent_at` say only that the system was told it
+    -- was sent. The sha256 is of the exact PDF transmitted, because the
+    -- quote PDF is rendered on demand and two renders are different files.
+    sent_via VARCHAR(32),
+    sent_to VARCHAR(500),
+    sent_document_sha256 VARCHAR(64),
     accepted_at TIMESTAMPTZ,
     declined_at TIMESTAMPTZ,
     converted_invoice_id VARCHAR(36),
