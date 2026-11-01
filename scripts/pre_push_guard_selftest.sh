@@ -101,6 +101,50 @@ check "main is passed through to GitHub's own protection" 0 github \
 check "a non-public remote is not governed by the guard" 0 origin \
   "refs/heads/archive-head $ORPHAN refs/heads/archive-head $A"
 
+# --- second stage: the published main ADVANCES ------------------------
+# The checks above all ran while the published main was $PUBLISHED, so
+# each one exercised the clause it names. Now the published main moves
+# on -- a scrub lands and is published -- and the tree on main no longer
+# holds what that scrub removed.
+#
+# This stage is deliberately AFTER the checks above: advancing main first
+# would make the foreign-root cases fail for the WRONG reason (the new
+# behind-main clause, not the foreign-parent rule), and a test that
+# passes for the wrong reason is worse than no test.
+git checkout -q main
+echo scrub > scrub.txt
+git add scrub.txt
+git commit -q -m "S: the published main removes a name"
+PUBLISHED_MAIN=$(git rev-parse HEAD)
+git push -q github main
+
+# a branch cut BEFORE the scrub -- so it is BEHIND the published main, and
+# its tree still holds what the scrub removed. This is the branch that
+# would REPUBLISH the scrubbed content if the guard allowed it.
+git checkout -q -b feat/behind "$PUBLISHED"
+echo d > d.txt
+git add d.txt
+git commit -q -m "D: a PR branch cut before the scrub"
+BEHIND=$(git rev-parse HEAD)
+
+# and a branch that DOES carry the published main, cut after the scrub
+git checkout -q -b feat/ahead "$PUBLISHED_MAIN"
+echo e > e.txt
+git add e.txt
+git commit -q -m "E: a PR branch that carries the published main"
+AHEAD=$(git rev-parse HEAD)
+
+# THE CASE THAT ACTUALLY BIT: a branch that is BEHIND the published main.
+# It satisfies the parents rule (its commits' parents are all older, and
+# so already in the published main) yet does not carry main's latest
+# scrub -- so it can publish the scrubbed content back. This must be
+# REFUSED, or a name comes back to the public repository.
+check "a branch BEHIND the published main is REFUSED" 1 github \
+  "refs/heads/feat/behind $BEHIND refs/heads/feat/behind $PUBLISHED_MAIN"
+
+check "a branch that CARRIES the published main is ALLOWED" 0 github \
+  "refs/heads/feat/ahead $AHEAD refs/heads/feat/ahead $PUBLISHED_MAIN"
+
 echo
 echo "passed: $pass   failed: $fail"
 [ "$fail" -eq 0 ] || exit 1
