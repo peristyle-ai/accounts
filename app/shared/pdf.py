@@ -1046,9 +1046,24 @@ def generate_quote_pdf(user, quote):
     elements.append(title_row)
     elements.append(Spacer(1, 0.5*cm))
 
+    # NO STATUS LINE.
+    #
+    # A quotation is a PROPOSAL, and the customer is reading it to decide
+    # whether to accept it. Printing our internal workflow state on the
+    # face of the document tells the reader something about OUR process
+    # and nothing about the offer -- and it is wrong the moment the
+    # document is transmitted, because the PDF is rendered on demand and
+    # the bytes that go out are rendered from the state at that instant.
+    # A quotation that had been sent but was rendered a second earlier
+    # says "Draft" on its face, and the customer holds a document that
+    # contradicts the record.
+    #
+    # The invoice PDF makes the same choice: it prints the due date and
+    # no status. A status is a fact about the ledger, not about the
+    # document's value to the reader.
     info_data = [
         ['Quote Date:', str(quote.quote_date), 'Quote #:', quote.quote_number],
-        ['Valid Until:', str(quote.valid_until) if quote.valid_until else 'N/A', 'Status:', quote.status.title()],
+        ['Valid Until:', str(quote.valid_until) if quote.valid_until else 'N/A', '', ''],
     ]
     info_table = Table(info_data, colWidths=[3*cm, 5*cm, 3*cm, 5*cm])
     info_table.setStyle(TableStyle([

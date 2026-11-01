@@ -514,3 +514,46 @@ def test_derive_gst_type_is_pure():
     assert derive_gst_type(overseas, business) == NO_GST
     # A business with no ABN cannot charge GST at all.
     assert derive_gst_type(au_registrant, no_abn_business) == NO_GST
+
+
+# --- 4. the PDF does not carry our internal status ------------------------
+
+def test_the_quote_pdf_does_not_print_the_internal_status(client, auth_headers,
+                                                          made_customers, made_quotes):
+    """A customer-facing proposal must not show the sender's workflow state.
+
+    The PDF is rendered on demand, so the bytes that go out carry the
+    status at the instant of rendering. A quotation transmitted after the
+    record was marked sent would otherwise be rendered while it was still
+    a draft, and the customer would hold a document that says "Draft" on
+    its face -- contradicting the record.
+
+    The invoice PDF makes the same choice: it prints the due date and no
+    status.
+    """
+    cid = _make_customer(client, auth_headers, made_customers,
+                         country='United States', gst=False)
+    r = _quote(client, auth_headers, made_quotes, cid)
+    qid = r.get_json()['quote']['id']
+    text = _pdf_text(client, auth_headers, qid)
+    assert 'Status:' not in text, (
+        'the quote PDF must not print the internal status:\\n' + text[:2000])
+    for word in ('Draft', 'Accepted', 'Declined', 'Expired'):
+        assert word not in text, (
+            f'the quote PDF must not print the internal status {word!r}:\\n'
+            + text[:2000])
+
+
+def test_the_quote_pdf_still_carries_the_facts(client, auth_headers,
+                                                made_customers, made_quotes):
+    """Removing the status line must not remove anything that matters."""
+    cid = _make_customer(client, auth_headers, made_customers,
+                         country='United States', gst=False)
+    r = _quote(client, auth_headers, made_quotes, cid)
+    q = r.get_json()['quote']
+    qid = q['id']
+    text = _pdf_text(client, auth_headers, qid)
+    assert q['quote_number'] in text, 'the quote number must be on the page'
+    assert str(q['quote_date']) in text, 'the quote date must be on the page'
+    assert 'Valid Until' in text, 'the validity must be on the page'
+    assert 'QUOTATION' in text
