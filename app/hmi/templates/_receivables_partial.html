@@ -25,9 +25,9 @@
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
         <h2 style="margin: 0;">Payment Due — Client Invoices</h2>
         {% if recv_include_received %}
-        <a href="{{ url_for('hmi.invoices', year=fy_year, quarter=(current_quarter if current_quarter is not none else 'custom'), start_date=start_date_str or none, end_date=end_date_str or none) }}" class="btn btn-secondary btn-small">Hide received invoices</a>
+        <a href="{{ recv_url_hide_received }}" class="btn btn-secondary btn-small">Hide received invoices</a>
         {% else %}
-        <a href="{{ url_for('hmi.invoices', year=fy_year, quarter=(current_quarter if current_quarter is not none else 'custom'), start_date=start_date_str or none, end_date=end_date_str or none, show_received='1') }}" class="btn btn-secondary btn-small">Show received invoices</a>
+        <a href="{{ recv_url_show_received }}" class="btn btn-secondary btn-small">Show received invoices</a>
         {% endif %}
     </div>
 

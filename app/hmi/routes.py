@@ -984,6 +984,11 @@ def _receivables_context(user_id, include_received=False):
     total_due = sum((Decimal(str(i.total_amount or 0)) for i in outstanding), Decimal('0'))
     total_overdue = sum((Decimal(str(i.total_amount or 0)) for i in overdue), Decimal('0'))
 
+    # The toggle links keep whatever filters the page is showing. Built
+    # here (not in the template) so the partial does not depend on the
+    # page's filter variables existing.
+    current_filters = {k: v for k, v in request.args.items() if k != 'show_received'}
+
     return {
         'recv_outstanding': outstanding,
         'recv_drafts': drafts,
@@ -993,6 +998,8 @@ def _receivables_context(user_id, include_received=False):
         'recv_overdue_count': len(overdue),
         'recv_total_due': total_due,
         'recv_total_overdue': total_overdue,
+        'recv_url_show_received': url_for('hmi.invoices', show_received='1', **current_filters),
+        'recv_url_hide_received': url_for('hmi.invoices', **current_filters),
     }
 
 
