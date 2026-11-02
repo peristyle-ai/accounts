@@ -20,6 +20,8 @@ from app.shared.auth import verify_credentials
 from app.shared.rate_limiter import rate_limit_api, record_attempt, _get_client_ip
 from app.shared.validators import validate_decimal, validate_date_string, validate_gst_type, validate_uuid
 from app.shared.address import validate_state, validate_postcode
+from app.shared.tax import check_gst_type, derive_gst_type
+from app.shared.tax import gst_basis as gst_basis_for
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -1057,7 +1059,13 @@ def create_invoice():
             return jsonify({'error': 'Customer not found'}), 404
 
         ex_gst_amount = validate_decimal(data.get('ex_gst_amount'), required=True, min_value=0)
-        gst_type = validate_gst_type(data.get('gst_type', 0))
+        if data.get('gst_type') is None:
+            # Not stated: derive it from the customer and the business, so
+            # an invoice raised for a customer outside Australia cannot
+            # carry Australian GST by omission.
+            gst_type = derive_gst_type(customer, user)
+        else:
+            gst_type = validate_gst_type(data.get('gst_type'))
         invoice_date = validate_date_string(data.get('invoice_date'), required=True)
         due_date = validate_date_string(data.get('due_date'))
         account_category_id = data.get('account_category_id')
@@ -1082,6 +1090,18 @@ def create_invoice():
         logger.warning('Validation error in create_invoice: %s', e)
         return jsonify({'error': 'Invalid input'}), 400
 
+    # An explicit rate that the customer cannot bear is REFUSED. Before
+    # this, an invoice could carry 10% Australian GST for a customer in
+    # the United States -- a tax document that is wrong.
+    gst_error = check_gst_type(customer, user, gst_type)
+    if gst_error:
+        return jsonify({'error': gst_error}), 400
+
+    # Capture WHY this invoice carries the GST treatment it carries, so
+    # the reason printed on the document is fixed at the moment it was
+    # raised.
+    invoice_gst_basis = gst_basis_for(customer, user, gst_type)
+
     invoice = Invoice(
         user_id=user.id,
         customer_id=customer_id,
@@ -1090,6 +1110,7 @@ def create_invoice():
         ex_gst_amount=ex_gst_amount,
         gst_amount=gst_amount,
         gst_type=gst_type,
+        gst_basis=invoice_gst_basis,
         total_amount=total_amount,
         invoice_date=invoice_date,
         due_date=due_date,
@@ -1171,7 +1192,11 @@ def update_invoice(invoice_id):
             invoice.ex_gst_amount = validate_decimal(data['ex_gst_amount'], required=True, min_value=0)
 
         if 'gst_type' in data:
-            invoice.gst_type = validate_gst_type(data['gst_type'])
+            # Validate into a local FIRST. Assigning to the ORM object as
+            # it validates means a request that is then rejected has
+            # already changed the row, and the change is flushed by the
+            # next query in the session -- which takes a row lock.
+            new_gst_type = validate_gst_type(data['gst_type'])
 
         if 'invoice_date' in data:
             invoice.invoice_date = validate_date_string(data['invoice_date'], required=True)
@@ -1244,6 +1269,15 @@ def update_invoice(invoice_id):
                 except (ValueError, TypeError) as e:
                     logger.warning('Invalid paid_at in update_invoice: %s', e)
                     return jsonify({'error': 'Invalid paid_at timestamp'}), 400
+
+        if 'gst_type' in data:
+            eff_customer = Customer.query.filter_by(
+                id=invoice.customer_id, user_id=request.current_user.id).first()
+            gst_error = check_gst_type(eff_customer, request.current_user, new_gst_type)
+            if gst_error:
+                return jsonify({'error': gst_error}), 400
+            invoice.gst_type = new_gst_type
+            invoice.gst_basis = gst_basis_for(eff_customer, request.current_user, new_gst_type)
 
         invoice.gst_amount = Invoice.calculate_gst(invoice.ex_gst_amount, invoice.gst_type)
         invoice.total_amount = Invoice.calculate_total(invoice.ex_gst_amount, invoice.gst_amount)
