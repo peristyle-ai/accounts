@@ -1,0 +1,223 @@
+{# Receivables worklist — 2026-11-02 (Jessica). Money IN.
+
+   "similar to expenses we can have pending and received payment options"
+
+   The mirror of the expenses' "Payment Due" table, but for the money the
+   CLIENT owes us. An invoice is PENDING until the money lands, then
+   RECEIVED ("Received" == paid_at IS NOT NULL — one source of truth, no
+   status-enum guessing, same as the expenses side).
+
+   Context (from hmi.invoices):
+     recv_outstanding      — client invoices issued and not yet paid
+     recv_drafts           — invoices NOT yet issued (not money anyone owes us)
+     recv_received         — recently received (only when show_received=1)
+     recv_include_received — bool, whether the received list is showing
+     recv_today            — date.today()
+     recv_overdue_count    — invoices past their due date and still unpaid
+     recv_total_due        — sum of the outstanding invoice totals
+     recv_total_overdue    — sum of the overdue invoice totals
+
+   The bank-side provenance (method + reference) is recorded with the
+   payment, so the pending_payment_reconciliations step (link a bank
+   line to an invoice, then confirm) has something to match on. #}
+
+<div class="card" id="receivables">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+        <h2 style="margin: 0;">Payment Due — Client Invoices</h2>
+        {% if recv_include_received %}
+        <a href="{{ url_for('hmi.invoices', year=fy_year, quarter=(current_quarter if current_quarter is not none else 'custom'), start_date=start_date_str or none, end_date=end_date_str or none) }}" class="btn btn-secondary btn-small">Hide received invoices</a>
+        {% else %}
+        <a href="{{ url_for('hmi.invoices', year=fy_year, quarter=(current_quarter if current_quarter is not none else 'custom'), start_date=start_date_str or none, end_date=end_date_str or none, show_received='1') }}" class="btn btn-secondary btn-small">Show received invoices</a>
+        {% endif %}
+    </div>
+
+    <p class="text-muted" style="margin-bottom: 1rem;">
+        Invoices we have issued to clients and have not been paid for yet.
+        Mark one <strong>Received</strong> when the money lands — the date,
+        method and reference are recorded so the bank statement can be
+        matched against it later.
+    </p>
+
+    {% if recv_outstanding %}
+    <div style="display: flex; gap: 2rem; flex-wrap: wrap; align-items: center; margin-bottom: 1.25rem;">
+        <div>
+            <div class="text-muted" style="font-size: 0.875rem;">Outstanding</div>
+            <div style="font-size: 1.5rem; font-weight: 600;">${{ "{:,.2f}".format(recv_total_due) }}</div>
+        </div>
+        <div>
+            <div class="text-muted" style="font-size: 0.875rem;">Invoices owing</div>
+            <div style="font-size: 1.5rem; font-weight: 600;">{{ recv_outstanding|length }}</div>
+        </div>
+        <div>
+            <div class="text-muted" style="font-size: 0.875rem;">Overdue</div>
+            <div style="font-size: 1.5rem; font-weight: 600;" class="{% if recv_overdue_count %}text-negative{% endif %}">
+                {{ recv_overdue_count }}
+            </div>
+        </div>
+        <div>
+            <div class="text-muted" style="font-size: 0.875rem;">Overdue value</div>
+            <div style="font-size: 1.5rem; font-weight: 600;" class="{% if recv_overdue_count %}text-negative{% endif %}">
+                ${{ "{:,.2f}".format(recv_total_overdue) }}
+            </div>
+        </div>
+        {% if recv_drafts %}
+        <div>
+            <div class="text-muted" style="font-size: 0.875rem;">Not yet issued</div>
+            <div style="font-size: 1.5rem; font-weight: 600;">{{ recv_drafts|length }}</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>Due</th>
+                <th>Client</th>
+                <th>Invoice</th>
+                <th>Job</th>
+                <th>Total</th>
+                <th class="actions-col">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for invoice in recv_outstanding %}
+            {% set overdue = invoice.due_date and invoice.due_date < recv_today %}
+            <tr>
+                <td class="nowrap">
+                    {% if invoice.due_date %}
+                    <span {% if overdue %}class="text-negative"{% endif %}>
+                        {{ invoice.due_date.strftime('%Y-%m-%d') }}
+                    </span>
+                    {% if overdue %}
+                    <div class="text-negative" style="font-size: 0.8125rem;">
+                        {{ (recv_today - invoice.due_date).days }}d overdue
+                    </div>
+                    {% elif invoice.due_date == recv_today %}
+                    <div style="font-size: 0.8125rem;" class="text-muted">due today</div>
+                    {% endif %}
+                    {% else %}
+                    <span class="text-muted" title="No payment deadline set">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="cell-truncate" title="{{ invoice.client_name }}">{{ invoice.client_name }}</div>
+                </td>
+                <td class="nowrap">
+                    {# There is no stored invoice_number column -- the PDF
+                       prints invoice.id[:8].upper() as the invoice ref, so
+                       show the same thing here. #}
+                    <span title="Invoice ref as printed on the PDF">{{ invoice.id[:8].upper() }}</span>
+                </td>
+                <td>
+                    <div class="cell-truncate" title="{{ invoice.description or '' }}">
+                        {% if invoice.description %}{{ invoice.description }}
+                        {% else %}<span class="text-muted">—</span>{% endif %}
+                    </div>
+                </td>
+                <td class="nowrap">${{ "{:,.2f}".format(invoice.total_amount) }}</td>
+                <td class="actions">
+                    <div class="actions-inner">
+                        <form method="POST" action="{{ url_for('hmi.mark_invoice_received', invoice_id=invoice.id) }}" class="actions-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="received_on" value="{{ recv_today.isoformat() }}">
+                            <input type="hidden" name="next" value="{{ request.full_path }}">
+                            <button type="submit" class="btn btn-primary btn-small">Received</button>
+                        </form>
+                        <a href="{{ url_for('hmi.edit_invoice', invoice_id=invoice.id) }}" class="btn btn-secondary btn-small">Edit</a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="text-muted">Nothing due — every client invoice has been paid. 🎉</p>
+    {% endif %}
+
+    {% if recv_drafts %}
+    <h3 style="margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 1rem;">
+        Not yet issued <span class="text-muted" style="font-weight: normal;">(drafts — not money anyone owes us yet)</span>
+    </h3>
+    <div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>Invoice date</th>
+                <th>Client</th>
+                <th>Job</th>
+                <th>Total</th>
+                <th class="actions-col">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for invoice in recv_drafts %}
+            <tr>
+                <td class="nowrap">{{ invoice.invoice_date.strftime('%Y-%m-%d') }}</td>
+                <td>
+                    <div class="cell-truncate" title="{{ invoice.client_name }}">{{ invoice.client_name }}</div>
+                </td>
+                <td>
+                    <div class="cell-truncate" title="{{ invoice.description or '' }}">
+                        {% if invoice.description %}{{ invoice.description }}
+                        {% else %}<span class="text-muted">—</span>{% endif %}
+                    </div>
+                </td>
+                <td class="nowrap">${{ "{:,.2f}".format(invoice.total_amount) }}</td>
+                <td class="actions">
+                    <div class="actions-inner">
+                        <a href="{{ url_for('hmi.edit_invoice', invoice_id=invoice.id) }}" class="btn btn-secondary btn-small">Edit</a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% endif %}
+
+    {% if recv_include_received and recv_received %}
+    <h3 style="margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 1rem;">Received</h3>
+    <div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>Paid on</th>
+                <th>Due</th>
+                <th>Client</th>
+                <th>Invoice</th>
+                <th>Total</th>
+                <th class="col-optional">Method</th>
+                <th class="col-optional">Reference</th>
+                <th class="actions-col">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for invoice in recv_received %}
+            <tr>
+                <td class="nowrap">{{ invoice.payment_date.strftime('%Y-%m-%d') if invoice.payment_date else (invoice.paid_at.strftime('%Y-%m-%d') if invoice.paid_at else '—') }}</td>
+                <td class="nowrap">{{ invoice.due_date.strftime('%Y-%m-%d') if invoice.due_date else '—' }}</td>
+                <td>
+                    <div class="cell-truncate" title="{{ invoice.client_name }}">{{ invoice.client_name }}</div>
+                </td>
+                <td class="nowrap">{{ invoice.id[:8].upper() }}</td>
+                <td class="nowrap">${{ "{:,.2f}".format(invoice.total_amount) }}</td>
+                <td class="col-optional">{{ invoice.payment_method or '—' }}</td>
+                <td class="col-optional">{{ invoice.payment_reference or '—' }}</td>
+                <td class="actions">
+                    <div class="actions-inner">
+                        <form method="POST" action="{{ url_for('hmi.mark_invoice_unreceived', invoice_id=invoice.id) }}" class="actions-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="{{ request.full_path }}">
+                            <button type="submit" class="btn btn-secondary btn-small" onclick="return confirm('Undo this payment receipt?')">Undo</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% endif %}
+</div>

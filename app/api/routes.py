@@ -1096,7 +1096,11 @@ def create_invoice():
         account_category_id=account_category_id,
         status=status,
         payment_date=payment_date,
-        amount_paid=amount_paid
+        amount_paid=amount_paid,
+        # 2026-11-02: notes carried the provenance of a reconstructed
+        # invoice (which quote, which assumption). The model and the HMI
+        # form already had it; the API did not.
+        notes=(data.get('notes') or '').strip() or None,
     )
 
     db.session.add(invoice)
