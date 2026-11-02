@@ -392,6 +392,23 @@ def test_non_boolean_recurring_flag_is_refused(client, auth_headers, made_custom
     assert r.status_code == 400, r.get_data(as_text=True)
 
 
+def test_quote_amounts_are_labelled_in_australian_dollars(client, auth_headers, made_customers, made_quotes):
+    """The currency is stated, not implied by a dollar sign.
+
+    A customer whose currency is not the dollar cannot tell what
+    "$6,000.00" means.
+    """
+    cid = _make_customer(client, auth_headers, made_customers,
+                         country='United States', gst=False)
+    r = _quote(client, auth_headers, made_quotes, cid, lines=[
+        {'description': 'A.I system build', 'amount': '6000.00'},
+    ])
+    assert r.status_code == 201, r.get_data(as_text=True)
+    qid = r.get_json()['quote']['id']
+    text = _pdf_text(client, auth_headers, qid)
+    assert 'AUD' in text, text[-2000:]
+
+
 def test_pdf_shows_the_recurring_split(client, auth_headers, made_customers, made_quotes):
     """The PDF must not present one TOTAL that hides a recurring line."""
     cid = _make_customer(client, auth_headers, made_customers,

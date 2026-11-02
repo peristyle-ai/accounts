@@ -278,17 +278,17 @@ def generate_invoice_pdf(user, invoice):
     elements.append(Spacer(1, 0.5*cm))
 
     elements.append(Paragraph('<b>Bill To:</b>', styles['Heading3']))
-    customer_info = f"<b>{invoice.customer.name}</b><br/>"
+    customer_info = f"<b>{_esc(invoice.customer.name)}</b><br/>"
     if invoice.customer.contact_name:
-        customer_info += f"Attn: {invoice.customer.contact_name}<br/>"
+        customer_info += f"Attn: {_esc(invoice.customer.contact_name)}<br/>"
     if render_address(invoice.customer):
-        customer_info += f"{render_address(invoice.customer).replace(chr(10), '<br/>')}<br/>"
+        customer_info += f"{_esc(render_address(invoice.customer)).replace(chr(10), '<br/>')}<br/>"
     if invoice.customer.contact_email:
-        customer_info += f"Email: {invoice.customer.contact_email}<br/>"
+        customer_info += f"Email: {_esc(invoice.customer.contact_email)}<br/>"
     if invoice.customer.contact_number:
-        customer_info += f"Phone: {invoice.customer.contact_number}<br/>"
+        customer_info += f"Phone: {_esc(invoice.customer.contact_number)}<br/>"
     if invoice.customer.abn:
-        customer_info += f"ABN: {invoice.customer.abn}<br/>"
+        customer_info += f"ABN: {_esc(invoice.customer.abn)}<br/>"
     elements.append(Paragraph(customer_info, styles['Normal']))
     elements.append(Spacer(1, 0.5*cm))
 
@@ -307,7 +307,7 @@ def generate_invoice_pdf(user, invoice):
     # other legacy single-line invoices rendering unchanged.
     line_items = _parse_line_items(invoice.description)
     if line_items:
-        items_data = [['Description', 'Amount']]
+        items_data = [['Description', 'Amount (AUD)']]
         for text, amount in line_items:
             items_data.append([
                 Paragraph(text, styles['Normal']),
@@ -318,7 +318,7 @@ def generate_invoice_pdf(user, invoice):
         # (encoded with <br/> by the caller) render correctly. Strings would
         # show the literal `<br/>` text.
         items_data = [
-            ['Description', 'Amount'],
+            ['Description', 'Amount (AUD)'],
             [Paragraph(invoice.description or 'Services', styles['Normal']),
              f"${invoice.ex_gst_amount:,.2f}"]
         ]
@@ -337,9 +337,9 @@ def generate_invoice_pdf(user, invoice):
     elements.append(Spacer(1, 0.3*cm))
 
     totals_data = [
-        ['Subtotal (ex GST):', f"${invoice.ex_gst_amount:.2f}"],
-        [f'GST ({float(invoice.gst_type)*100:.0f}%):', f"${invoice.gst_amount:.2f}"],
-        ['TOTAL:', f"${invoice.total_amount:.2f}"]
+        ['Subtotal (ex GST):', f"${invoice.ex_gst_amount:,.2f}"],
+        [f'GST ({float(invoice.gst_type)*100:.0f}%):', f"${invoice.gst_amount:,.2f}"],
+        ['TOTAL:', f"${invoice.total_amount:,.2f}"]
     ]
     totals_table = Table(totals_data, colWidths=[12*cm, 4*cm])
     totals_table.setStyle(TableStyle([
@@ -353,11 +353,46 @@ def generate_invoice_pdf(user, invoice):
     ]))
     elements.append(totals_table)
 
-    if invoice.customer.gst and user.abn:
+    # A zero-GST invoice must say WHY, in the words that match the actual
+    # reason -- "outside Australia" and "not registered" are different
+    # facts and only one of them is true for any given customer. The
+    # wording comes from app/shared/tax.py so the document and the API
+    # cannot disagree, and it is rendered from the STORED basis so the
+    # invoice says what it said when it was raised.
+    from app.shared.tax import gst_note_for_basis
+    stored_basis = getattr(invoice, 'gst_basis', None)
+    note = gst_note_for_basis(stored_basis) if stored_basis else ''
+    if not note and not stored_basis:
+        # An invoice raised before the basis was captured: fall back to
+        # the live record rather than printing nothing.
+        from app.shared.tax import gst_note
+        note = gst_note(invoice.customer, user, invoice.gst_type)
+    if note:
+        elements.append(Spacer(1, 0.4*cm))
+        elements.append(Paragraph(f'<i>{_esc(note)}</i>', styles['Normal']))
+
+    # Payment terms and the invoice number to quote are printed for EVERY
+    # invoice that has a due date. The old condition required the
+    # customer to be a GST registrant, so a customer who is not
+    # registered -- and every customer outside Australia -- was sent an
+    # invoice carrying a due date but no terms and no instruction to
+    # quote the invoice number, which is precisely what makes a payment
+    # matchable to the invoice it pays.
+    #
+    # The number of days comes from the invoice's OWN dates, not from the
+    # tenant default, so the sentence cannot contradict the due date
+    # printed a few lines above it.
+    if invoice.due_date:
         elements.append(Spacer(1, 1*cm))
-        payment_terms = user.payment_terms if user.payment_terms else 14
+        net_days = 0
+        if invoice.invoice_date:
+            net_days = (invoice.due_date - invoice.invoice_date).days
+        if net_days >= 0:
+            terms_text = f'Payment terms: Net {net_days} days.'
+        else:
+            terms_text = f'Payment due {invoice.due_date}.'
         elements.append(Paragraph(
-            f'<i>Payment terms: Net {payment_terms} days. Please include invoice number {invoice.id[:8].upper()} on payment.</i>',
+            f'<i>{terms_text} Please include invoice number {invoice.id[:8].upper()} on payment.</i>',
             styles['Normal']
         ))
 
@@ -1093,7 +1128,7 @@ def generate_quote_pdf(user, quote):
     elements.append(Paragraph(customer_info, styles['Normal']))
     elements.append(Spacer(1, 0.5*cm))
 
-    items_data = [['Description', 'Amount']]
+    items_data = [['Description', 'Amount (AUD)']]
     for line in (quote.lines or []):
         description = str(line.get('description', ''))
         if line.get('recurring'):

@@ -21,6 +21,13 @@ class Invoice(db.Model):
     ex_gst_amount = db.Column(db.Numeric(12, 2), nullable=False)
     gst_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
     gst_type = db.Column(db.Numeric(3, 1), nullable=False, default=0)
+    # WHY this invoice carries the GST treatment it carries (see
+    # app/shared/tax.py). Captured when the invoice is raised, so the
+    # reason printed on the document cannot change if the customer
+    # record is edited afterwards. Nullable: an invoice raised before
+    # this column existed has no basis, and the PDF falls back to
+    # deriving it from the customer record.
+    gst_basis = db.Column(db.String(32), nullable=True)
     total_amount = db.Column(db.Numeric(12, 2), nullable=False)
     invoice_date = db.Column(db.Date, nullable=False)
     due_date = db.Column(db.Date, nullable=True)
@@ -71,6 +78,7 @@ class Invoice(db.Model):
             'ex_gst_amount': str(self.ex_gst_amount),
             'gst_amount': str(self.gst_amount),
             'gst_type': str(self.gst_type),
+            'gst_basis': self.gst_basis,
             'total_amount': str(self.total_amount),
             'invoice_date': self.invoice_date.isoformat() if self.invoice_date else None,
             'due_date': self.due_date.isoformat() if self.due_date else None,

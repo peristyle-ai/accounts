@@ -251,6 +251,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     ex_gst_amount NUMERIC(12, 2) NOT NULL,
     gst_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
     gst_type NUMERIC(3, 1) NOT NULL DEFAULT 0,
+    gst_basis VARCHAR(32),
     total_amount NUMERIC(12, 2) NOT NULL,
     invoice_date DATE NOT NULL,
     due_date DATE,

@@ -37,6 +37,18 @@ def is_australian(customer):
     return _country(customer) in _AUSTRALIAN
 
 
+def is_overseas(customer):
+    """A customer that is KNOWN to be outside Australia.
+
+    An EMPTY country is NOT overseas: it is unknown, and unknown must
+    not silently become "no GST" -- that is how tax that is owed gets
+    lost. `derive_gst_type` treats an unknown country as Australian for
+    charging purposes, so this helper must agree with it.
+    """
+    country = _country(customer)
+    return bool(country) and country not in _AUSTRALIAN
+
+
 def customer_is_registrant(customer):
     """Is this customer registered for Australian GST?"""
     return bool(getattr(customer, 'gst', False))
@@ -58,7 +70,7 @@ def derive_gst_type(customer, user):
         return NO_GST
     if not customer_is_registrant(customer):
         return NO_GST
-    if _country(customer) and not is_australian(customer):
+    if is_overseas(customer):
         return NO_GST
     return GST_RATE
 
@@ -80,6 +92,12 @@ def check_gst_type(customer, user, gst_type):
                 "cannot be charged to them. Set the customer's GST "
                 "registration and ABN on their record first, or quote with "
                 "no GST.")
+    if is_overseas(customer):
+        # A customer who IS an Australian GST registrant but is located
+        # outside Australia: the country decides, so the flag cannot
+        # put Australian GST on an overseas document.
+        return ("This customer is located outside Australia, so Australian GST "
+                "cannot be charged to them.")
     return None
 
 
