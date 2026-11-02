@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, current_app, send_file
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash
-from datetime import date
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 import os
 import uuid
@@ -648,7 +648,16 @@ def invoices():
             pass
 
     invoices = query.order_by(Invoice.invoice_date.desc()).all()
-    return render_template('invoices.html', invoices=invoices)
+    # 2026-11-02: the receivables worklist (money IN) — the mirror of the
+    # expenses' "Payment Due" table. Jessica's ask: "similar to expenses we
+    # can have pending and received payment options", so a client invoice
+    # is PENDING until the money lands, then RECEIVED.
+    receivables = _receivables_context(
+        user_id,
+        include_received=request.args.get('show_received') in ('1', 'true'),
+    )
+
+    return render_template('invoices.html', invoices=invoices, **receivables)
 
 
 @hmi_bp.route('/invoices/new', methods=['GET', 'POST'])
@@ -666,6 +675,11 @@ def new_invoice():
         invoice_date_str = request.form.get('invoice_date', '')
         due_date_str = request.form.get('due_date', '')
         account_category_id = request.form.get('account_category_id', '')
+        # 2026-11-02: status + notes (see edit_invoice).
+        status = (request.form.get('status') or 'draft').strip()
+        if status not in INVOICE_STATUSES:
+            status = 'draft'
+        notes = request.form.get('notes', '').strip()
 
         errors = []
 
@@ -682,6 +696,8 @@ def new_invoice():
             return render_template('invoice_form.html',
                                    categories=categories,
                                    invoice=None,
+                                   status=status,
+                                   notes=notes,
                                    client_name=client_name,
                                    description=description,
                                    amount=amount,
@@ -709,6 +725,8 @@ def new_invoice():
             return render_template('invoice_form.html',
                                    categories=categories,
                                    invoice=None,
+                                   status=status,
+                                   notes=notes,
                                    client_name=client_name,
                                    description=description,
                                    amount=amount,
@@ -728,8 +746,12 @@ def new_invoice():
             total_amount=total_amount,
             invoice_date=invoice_date,
             due_date=due_date,
-            account_category_id=account_category_id if account_category_id else None
+            account_category_id=account_category_id if account_category_id else None,
+            status=status,
+            notes=notes or None,
         )
+        if status == 'sent':
+            invoice.sent_at = datetime.now(timezone.utc)
 
         db.session.add(invoice)
         db.session.flush()
@@ -772,6 +794,14 @@ def edit_invoice(invoice_id):
         invoice_date_str = request.form.get('invoice_date', '')
         due_date_str = request.form.get('due_date', '')
         account_category_id = request.form.get('account_category_id', '')
+        # 2026-11-02: status + notes on the form. The receivables worklist
+        # needs a draft to be flip-able to "sent" from the HMI (an invoice
+        # only becomes money owed once it has been issued), and the notes
+        # carry the provenance of a reconstructed invoice.
+        status = (request.form.get('status') or invoice.status or 'draft').strip()
+        if status not in INVOICE_STATUSES:
+            status = 'draft'
+        notes = request.form.get('notes', '').strip()
 
         errors = []
 
@@ -817,6 +847,12 @@ def edit_invoice(invoice_id):
             invoice.account_category_id = account_category_id if account_category_id else None
             invoice.gst_amount = (invoice.ex_gst_amount * invoice.gst_type).quantize(Decimal('0.01'))
             invoice.total_amount = invoice.ex_gst_amount + invoice.gst_amount
+            invoice.notes = notes or None
+            if status != invoice.status:
+                invoice.status = status
+                # Leaving "draft" means the invoice has now been issued.
+                if status == 'sent' and not invoice.sent_at:
+                    invoice.sent_at = datetime.now(timezone.utc)
 
             log = ActivityLog(
                 user_id=user_id,
@@ -839,6 +875,8 @@ def edit_invoice(invoice_id):
             return render_template('invoice_form.html',
                                    categories=categories,
                                    invoice=invoice,
+                                   status=status,
+                                   notes=notes,
                                    client_name=client_name,
                                    description=description,
                                    amount=amount,
@@ -878,6 +916,185 @@ def delete_invoice(invoice_id):
 
     flash('Invoice deleted successfully', 'success')
     return redirect(url_for('hmi.invoices'))
+
+
+# =====================================================================
+# Receivables worklist (2026-11-02, Jessica) — money IN
+# ---------------------------------------------------------------------
+# Jessica: "similar to expenses we can have pending and received payment
+# options". The expenses side has the "Payment Due" table with a Paid
+# button; this is the same idea for client invoices: a PENDING invoice
+# until the money lands, then RECEIVED.
+#
+# "Received" is exactly paid_at IS NOT NULL — one source of truth, no
+# status enum guessing (the expenses side works the same way). The
+# bank-side provenance (payment_method + payment_reference) is recorded
+# alongside it, so when the bank statements arrive the match is
+# auditable: pending_payment_reconciliations already models the
+# "link a bank line to an invoice, then confirm" step.
+#
+# Draft invoices are shown too, but in their own bucket: a draft is an
+# invoice we have NOT issued yet, so it is not money anyone owes us.
+# =====================================================================
+
+# =====================================================================
+# Receivables worklist (2026-11-02, Jessica) — money IN
+# ---------------------------------------------------------------------
+# The statuses an invoice can be set to from the HMI form. "paid" is NOT
+# in the list: a paid invoice is paid_at IS NOT NULL, which the Received
+# button sets (and the Undo button clears). Keeping "paid" out of the
+# dropdown stops the two facts from drifting apart.
+INVOICE_STATUSES = ('draft', 'sent', 'overdue', 'cancelled')
+
+
+def _receivables_context(user_id, include_received=False):
+    """Gather the money-IN worklist for the invoices page.
+
+    Returns a dict for the _receivables_partial.html include.
+    """
+    base = Invoice.query.filter(Invoice.user_id == user_id)
+
+    outstanding = (
+        base.filter(
+            Invoice.status.in_(('sent', 'overdue')),
+            Invoice.paid_at.is_(None),
+        )
+        .order_by(Invoice.due_date.asc(), Invoice.invoice_date.desc())
+        .all()
+    )
+
+    # Drafts = an invoice still to be raised (not yet owed to us).
+    drafts = (
+        base.filter(Invoice.status == 'draft')
+        .order_by(Invoice.invoice_date.desc())
+        .all()
+    )
+
+    received_rows = []
+    if include_received:
+        received_rows = (
+            base.filter(Invoice.paid_at.isnot(None))
+            .order_by(Invoice.paid_at.desc())
+            .limit(50)
+            .all()
+        )
+
+    today = date.today()
+    overdue = [i for i in outstanding if i.due_date and i.due_date < today]
+    total_due = sum((Decimal(str(i.total_amount or 0)) for i in outstanding), Decimal('0'))
+    total_overdue = sum((Decimal(str(i.total_amount or 0)) for i in overdue), Decimal('0'))
+
+    # The toggle links keep whatever filters the page is showing. Built
+    # here (not in the template) so the partial does not depend on the
+    # page's filter variables existing.
+    current_filters = {k: v for k, v in request.args.items() if k != 'show_received'}
+
+    return {
+        'recv_outstanding': outstanding,
+        'recv_drafts': drafts,
+        'recv_received': received_rows,
+        'recv_include_received': include_received,
+        'recv_today': today,
+        'recv_overdue_count': len(overdue),
+        'recv_total_due': total_due,
+        'recv_total_overdue': total_overdue,
+        'recv_url_show_received': url_for('hmi.invoices', show_received='1', **current_filters),
+        'recv_url_hide_received': url_for('hmi.invoices', **current_filters),
+    }
+
+
+def _receivables_return_url(next_url):
+    """Where to send the operator after a mark-received / undo action."""
+    if next_url and next_url.startswith('/') and not next_url.startswith('//'):
+        return next_url
+    return url_for('hmi.invoices')
+
+
+@hmi_bp.route('/invoices/<invoice_id>/mark-received', methods=['POST'])
+@login_required
+def mark_invoice_received(invoice_id):
+    """Record that a client invoice has been paid (money IN)."""
+    user_id = session['user_id']
+    invoice = Invoice.query.filter_by(id=invoice_id, user_id=user_id).first()
+
+    if not invoice:
+        flash('Invoice not found', 'error')
+        return redirect(url_for('hmi.invoices'))
+
+    old_values = invoice.to_dict()
+
+    received_str = (request.form.get('received_on') or '').strip()
+    if received_str:
+        try:
+            received_on = date.fromisoformat(received_str)
+        except ValueError:
+            flash('Invalid payment date', 'error')
+            return redirect(url_for('hmi.invoices'))
+    else:
+        received_on = date.today()
+
+    # payment_date = the day the money landed (the value date).
+    # paid_at     = when we recorded that it landed (the audit stamp).
+    invoice.payment_date = received_on
+    invoice.paid_at = datetime.now(timezone.utc)
+    invoice.amount_paid = invoice.total_amount
+    invoice.status = 'paid'
+    invoice.payment_method = (request.form.get('payment_method') or '').strip() or None
+    invoice.payment_reference = (request.form.get('payment_reference') or '').strip() or None
+
+    log = ActivityLog(
+        user_id=user_id,
+        action='UPDATE',
+        table_name='invoices',
+        record_id=invoice.id,
+        old_values=old_values,
+        new_values=invoice.to_dict(),
+        ip_address=request.remote_addr
+    )
+    db.session.add(log)
+    db.session.commit()
+
+    label = invoice.client_name or invoice.id
+    amount = f"${invoice.total_amount:,.2f}"
+    flash(f'Payment received: {label} {amount}', 'success')
+    return redirect(_receivables_return_url(request.form.get('next')))
+
+
+@hmi_bp.route('/invoices/<invoice_id>/mark-unreceived', methods=['POST'])
+@login_required
+def mark_invoice_unreceived(invoice_id):
+    """Undo a mark-received so the invoice returns to the receivables worklist."""
+    user_id = session['user_id']
+    invoice = Invoice.query.filter_by(id=invoice_id, user_id=user_id).first()
+
+    if not invoice:
+        flash('Invoice not found', 'error')
+        return redirect(url_for('hmi.invoices'))
+
+    old_values = invoice.to_dict()
+    invoice.payment_date = None
+    invoice.paid_at = None
+    invoice.amount_paid = None
+    invoice.payment_method = None
+    invoice.payment_reference = None
+    today = date.today()
+    invoice.status = 'overdue' if (invoice.due_date and invoice.due_date < today) else 'sent'
+
+    log = ActivityLog(
+        user_id=user_id,
+        action='UPDATE',
+        table_name='invoices',
+        record_id=invoice.id,
+        old_values=old_values,
+        new_values=invoice.to_dict(),
+        ip_address=request.remote_addr
+    )
+    db.session.add(log)
+    db.session.commit()
+
+    label = invoice.client_name or invoice.id
+    flash(f'Payment receipt undone: {label}', 'info')
+    return redirect(_receivables_return_url(request.form.get('next')))
 
 
 @hmi_bp.route('/invoices/<invoice_id>/pdf')
