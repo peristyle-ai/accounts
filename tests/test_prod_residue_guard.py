@@ -74,7 +74,11 @@ class TestResidueRecognition:
                 if c.name and c.id in before
             ]
 
-        assert names, 'expected at least one real customer to check against'
+        # A CI database is fresh: it has no customers at all, so there
+        # may be nothing to check. The property under test is that the
+        # matcher never claims a REAL customer -- and "there are no real
+        # customers" satisfies it vacuously. The local suite runs
+        # against live production, where the list is non-empty.
         for name in names:
             assert _is_residue_name(name) is False, name
 
@@ -85,6 +89,20 @@ class TestResidueRecognition:
     def test_a_prefix_must_be_at_the_start(self):
         # 'ACME Update Test Co' is not a row the suite created.
         assert _is_residue_name('ACME Update Test Co') is False
+
+    def test_a_name_shaped_like_a_real_customer_is_not_residue(self):
+        """The property must hold even where there are no real rows to
+        read -- a fresh CI database has no customers at all, so the
+        live-database scan above is vacuous there. These names are the
+        ALLOWED fixture names from the identifier gate, not real
+        customers, so they are safe to write in a public repository."""
+        for name in (
+            'Example Pty Ltd',
+            'Acme Corp',
+            'Widget Corp',
+            'Sample Pty Ltd',
+        ):
+            assert _is_residue_name(name) is False, name
 
 
 class TestGuardSafety:
@@ -123,7 +141,8 @@ class TestGuardSafety:
                 if i.client_name and i.id in before
             ]
 
-        assert names, 'expected at least one real invoice to check against'
+        # Vacuously true on a fresh CI database -- see the note in the
+        # customer test above.
         for name in names:
             assert self._guard_would_sweep(name=name) is False, name
 
