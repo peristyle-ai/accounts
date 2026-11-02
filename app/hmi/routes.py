@@ -22,18 +22,18 @@ hmi_bp = Blueprint('hmi', __name__)
 # =====================================================================
 # Receipt URL helper (2026-10-26)
 # ---------------------------------------------------------------------
-# J asked for "Open the original receipt": a View-receipt button in the
+# The request was "Open the original receipt": a View-receipt button in the
 # expenses list and one on the edit-expense form.
 #
 # The blocker: `attachment_path` is stored in TWO different shapes.
-#   - absolute: "/home/enp/py_pg_accounts/uploads/expenses/<name>.jpg"
-#     (UPLOAD_FOLDER is absolute in ~/py_pg_accounts/.env — every row
+#   - absolute: "<upload root>/uploads/expenses/<name>.jpg"
+#     (UPLOAD_FOLDER is absolute in the install's .env — every row
 #      created via the API lands here; 63/63 rows on 2026-10-26)
 #   - relative: "uploads/expenses/<name>.jpg"  (HMI form upload)
 #
 # The edit form used to do `attachment_path.replace('uploads/', '')`,
 # which mangles the absolute form into
-# "/home/enp/py_pg_accounts/expenses/<name>.jpg" -> /uploads//home/... -> 404.
+# "<upload root>/expenses/<name>.jpg" -> /uploads/<upload root>/... -> 404.
 # So every receipt preview was dead. serve_upload() serves from
 # os.path.abspath(UPLOAD_FOLDER), so what we need is the path RELATIVE
 # to that root: "expenses/<name>.jpg".

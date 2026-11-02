@@ -235,8 +235,8 @@ class TestBusinessUpdateStructured:
         r = client.put(
             '/api/auth/business',
             json={
-                'address_line1': '99 New St',
-                'city': 'Brisbane',
+                'address_line1': '1 Example St',
+                'city': 'Sample Suburb',
                 'state': 'qld',
                 'postcode': '4000',
                 'address_country': 'Australia',
