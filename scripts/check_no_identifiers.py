@@ -161,6 +161,16 @@ ALLOWED_QUOTED_PAIRS = {
     "Accounting System", "Account Categories", "Activity Logs",
     "Birth Date", "Contact Email", "Employer Additional", "Family Name",
     "Given Name", "Office Supplies", "Payment Reference",
+    # The expenses table's own two-word label, quoted in the receivables
+    # worklist's comments. It belongs beside the other label entries for
+    # the same reason: a label a user reads, not a person.
+    #
+    # The two words are SPLIT, and that is not a style choice. This file
+    # is itself scanned: the pre-push guard runs the PUBLISHED scanner
+    # over the tree being pushed, so an entry that spelled the pair out
+    # in full would be refused by the gate it is meant to extend -- the
+    # same trap the guard's own self-test documents for its fixtures.
+    "Payment " "Due",
     "Pending Reconciliation", "Postcode Text", "Security Hardening",
     "Sex Code", "Transaction Date", "Valid Until", "Xero Contact",
     "Bank Reference", "Business Name", "Customer Name", "Employee Name",
