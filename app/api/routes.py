@@ -700,7 +700,7 @@ def create_expense():
         expense_date = validate_date_string(data.get('expense_date'), required=True)
         account_category_id = data.get('account_category_id')
 
-        # 2026-09-24: project_code from enp_crm /api/leads/search (LD-YYYY-NNNNNN).
+        # 2026-09-24: project_code from a CRM's /api/leads/search (LD-YYYY-NNNNNN).
         # Optional — NULL for overhead/admin expenses.
         project_code = data.get('project_code')
         if project_code is not None:
@@ -708,8 +708,8 @@ def create_expense():
             if project_code and len(project_code) > 50:
                 return jsonify({'error': 'project_code must be 50 characters or fewer'}), 400
 
-        # 2026-09-24: project_name — human-readable label, denormalized from cmo's
-        # lead.name at ingest time. Optional; defaults to None. Length-bounded.
+        # 2026-09-24: project_name — human-readable label, denormalized from the
+        # CRM's lead.name at ingest time. Optional; defaults to None. Length-bounded.
         project_name = data.get('project_name')
         if project_name is not None:
             project_name = str(project_name).strip() or None
