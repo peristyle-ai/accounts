@@ -84,12 +84,74 @@ _CORPORATE_RE = re.compile(
 )
 _HOME_RE = re.compile(r"/(?:home|Users)/([A-Za-z0-9._-]+)/")
 
-# A name-shaped token: two capitalised words, e.g. PLACEHOLDER_A
-PLACEHOLDER_B -- "Open the Original", "Payment Reference"
+# A name-shaped token: two capitalised words, e.g. a personal name.
+# Deliberately narrow -- "Open the Original", "Payment Reference"
 # and every sentence start must not match.
 NAME_SHAPED_RE = re.compile(
     r"\b([A-Z][a-z]{2,15}) ([A-Z][a-z]{2,15})\b"
 )
+# A QUOTED pair of capitalised words -- a name written as an EXAMPLE.
+#
+# WHY THIS EXISTS: the scanner's own comment once used two real people's
+# names as the example of a "name-shaped token", and published them. The
+# existing "name" rule could not see it: that rule needs a CONTACT
+# keyword ("CEO", "Attn") on the same line, and a comment explaining a
+# regex is not a contact. A name in a comment is still a name in the
+# repository -- the comment is the part nobody thinks to scrub.
+#
+# So this rule matches the SHAPE (a quoted, capitalised, two-word pair)
+# and the allowlist below names every legitimate instance of it: field
+# labels ("Payment Reference"), the repo's own placeholders ("Acme
+# Corp"), and the ATO's published sample rows. A real person's name is
+# none of those, so it fires.
+# The pair may be split across two comment lines -- the leak that
+# prompted this rule was written that way -- so the pattern allows a
+# newline and an optional comment marker between the two words.
+#
+# NOTE: that sentence once named the person. It is the mistake this
+# rule exists to catch, made by the person who wrote the rule. The
+# source of the gate must not carry what the gate refuses.
+_QUOTED_NAME_RE = re.compile(
+    r"""["']([A-Z][a-z]{2,15})(?:[ \t]*\n[ \t]*#[ \t]*)?[ \t]+"""
+    r"""([A-Z][a-z]{2,15})["']"""
+)
+
+# Legitimate quoted capitalised pairs. Each entry is either a FIELD
+# LABEL, a PLACEHOLDER this repo uses, or the ATO's own published
+# sample data -- never a real person.
+ALLOWED_QUOTED_PAIRS = {
+    # field labels
+    "Accounting System", "Account Categories", "Activity Logs",
+    "Birth Date", "Contact Email", "Employer Additional", "Family Name",
+    "Given Name", "Office Supplies", "Payment Reference",
+    "Pending Reconciliation", "Postcode Text", "Security Hardening",
+    "Sex Code", "Transaction Date", "Valid Until", "Xero Contact",
+    "Bank Reference", "Business Name", "Customer Name", "Employee Name",
+    "Account Name", "Add Expense", "Edit Expense", "New Expense",
+    "New Invoice", "Edit Invoice", "Bad State", "Custom Suite",
+    "Legacy Reject", "Legacy Update", "Tenant Specific", "Test Contact",
+    "Test Refactor", "Test Sender", "Update Bad", "Update Test",
+    # placeholders this repo uses
+    "Acme Corp", "Contoso Ltd", "Example Corp",
+    "Foo Corp", "Initech Inc",
+    "Placeholder Corp", "Sample Corp", "Sample Employee",
+    "Sample Suburb", "Sample Town", "Test Corp", "Widget Corp",
+    "Wrkr Pay", "Salsac Other", "Example Suburb", "Fortitude Valley",
+    "First Last", "Alice Smith", "Jane Doe", "Jane Smith",
+    "Alex Sample", "Alex Ann", "Pty Ltd",
+    # the ATO's own published sample rows -- public, not ours
+    "Harry Staur", "Salsac Super",
+    # countries and institutions
+    "United States", "Commonwealth Bank",
+    # the repo's placeholder company names
+    "Your Company", "Your Company Pty Ltd", "YourCompany Pty Ltd",
+    # the placeholder vendors the review-page tests use
+    "Test Vendor", "Plain Vendor", "Other Vendor", "Mine Vendor",
+    "Sender Vendor", "Linked Vendor", "Flagged Vendor",
+    # an Australian suburb used as a placeholder address
+    "West End",
+}
+
 _CASE_THAT_RE = re.compile(r"the work\s*:\s*", re.IGNORECASE)
 _PROPER_AFTER_COLON_RE = re.compile(r"[A-Z][A-Za-z&'.-]+")
 # A ROLE, not the word "contact". "contact" on its own appears in
@@ -161,6 +223,18 @@ def tracked_files(repo: Path) -> list[Path]:
 
 
 def scan_text(rule: str, path: str, text: str, findings: list[Finding]) -> None:
+    # A name written as a quoted EXAMPLE. This runs over the WHOLE text
+    # rather than line by line, because the pair can be split across two
+    # comment lines -- and the contact-context requirement of the "name"
+    # rule is deliberately absent, because the leak this catches was in
+    # a comment explaining a regex.
+    for m in _QUOTED_NAME_RE.finditer(text):
+        phrase = f"{m.group(1)} {m.group(2)}"
+        if phrase in ALLOWED_QUOTED_PAIRS or phrase in NAME_STOPWORDS:
+            continue
+        line_no = text.count("\n", 0, m.start()) + 1
+        findings.append(Finding(rule, path, line_no, f"quoted name {phrase!r}"))
+
     for i, line in enumerate(text.split("\n"), start=1):
         for m in _EMAIL_RE.finditer(line):
             domain = m.group(1).lower()
@@ -332,6 +406,7 @@ _OTHER_TRADING = "West" + "mere Srl"
 _DOMAIN = "northwind" + "-trading.example"
 _LEAD = "le" + "ad"
 _PERSON = "Ameli" + "a Hart" + "ley"
+_PERSON2 = "Jord" + "an Va" + "le"
 _ACCOUNT = "some" + "user"
 
 SELF_TEST_CASES = [
@@ -341,6 +416,19 @@ SELF_TEST_CASES = [
     ("corporate", "customer " + _OTHER_TRADING + " in Italy"),
     ("home", 'absolute: "/home/' + _ACCOUNT + '/py_pg_accounts/uploads/x.jpg"'),
     ("name", "raise it for " + _PERSON + ", CEO"),
+    # A name as a QUOTED EXAMPLE -- the shape that leaked once, in a
+    # comment, where the contact-context rule could not see it. The
+    # sample is assembled from parts so the source of the gate does not
+    # itself contain a name.
+    ("quoted_name", 'e.g. "' + _PERSON2 + '" in a comment'),
+    # The SAME name SPLIT ACROSS TWO COMMENT LINES. This is the exact
+    # form that leaked, and a per-line regex cannot see it -- so the
+    # rule runs over the whole text. Without this case the rule could
+    # be quietly narrowed to one line and the leak could return.
+    ("quoted_name", 'e.g. "' + _PERSON2.split()[0] + '\n# ' + _PERSON2.split()[1] + '"'),
+    # Single quotes, and no trailing punctuation: the shape must not
+    # depend on how the example was punctuated.
+    ("quoted_name", "e.g. '" + _PERSON2 + "'"),
 ]
 
 
