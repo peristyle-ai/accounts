@@ -1,1 +1,1 @@
-ci: open the pull request for feat/ and publish/ branches too
+fix(tests): the suite must not leave residue in the LIVE database
