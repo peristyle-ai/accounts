@@ -61,7 +61,7 @@ jobs:
       group: agent-pr-${{ github.ref }}
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: open or update the pull request
         env:
