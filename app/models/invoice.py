@@ -11,7 +11,11 @@ class Invoice(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = db.Column(db.BigInteger, db.ForeignKey(accounts_config.users_fk, ondelete='CASCADE'), nullable=False, index=True)
     account_category_id = db.Column(db.String(36), db.ForeignKey('account_categories.id', ondelete='SET NULL'), nullable=True)
-    customer_id = db.Column(db.String(36), db.ForeignKey('customers.id', ondelete='RESTRICT'), nullable=False, index=True)
+    # customer_id is NULLABLE — matches schema/init.sql. The HMI invoice
+    # form collects a free-text client_name and has no customer picker,
+    # so an invoice raised from the HMI has no customer row to point at.
+    # The API's create_invoice sets it explicitly and is unaffected.
+    customer_id = db.Column(db.String(36), db.ForeignKey('customers.id', ondelete='RESTRICT'), nullable=True, index=True)
     client_name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
     ex_gst_amount = db.Column(db.Numeric(12, 2), nullable=False)

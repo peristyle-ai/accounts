@@ -681,6 +681,7 @@ def new_invoice():
                 flash(error, 'error')
             return render_template('invoice_form.html',
                                    categories=categories,
+                                   invoice=None,
                                    client_name=client_name,
                                    description=description,
                                    amount=amount,
@@ -707,6 +708,7 @@ def new_invoice():
             flash(f'Invalid data: {str(e)}', 'error')
             return render_template('invoice_form.html',
                                    categories=categories,
+                                   invoice=None,
                                    client_name=client_name,
                                    description=description,
                                    amount=amount,
