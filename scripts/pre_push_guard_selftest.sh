@@ -154,6 +154,31 @@ check "main is passed through to GitHub's own protection" 0 github \
 check "a non-public remote is not governed by the guard" 0 origin \
   "refs/heads/archive-head $ORPHAN refs/heads/archive-head $A"
 
+# The CONTENT check. This branch is a pure extension of the published
+# main, so every structural rule passes; only the identifier scan can
+# refuse it.
+#
+# It runs BEFORE the second stage below advances the published main. After
+# that advance, this branch would be BEHIND the published main and would be
+# refused by the behind-main clause instead -- so it would pass for the
+# WRONG reason, and a test that passes for the wrong reason is worse than
+# no test.
+check "a structurally valid branch carrying an identifier is REFUSED" 1 github \
+  "refs/heads/feat/has-identifier $IDENT refs/heads/feat/has-identifier $PUBLISHED"
+
+# The scanner in the PUBLISHED main is the one that must not be silenced.
+# A branch shipping a scanner that finds nothing must still be REFUSED,
+# because the published scanner catches the identifier. And a branch that
+# DELETES the gate must be REFUSED outright.
+# The scanner in the PUBLISHED main is the one that must not be
+# silenced. A branch shipping a scanner that finds nothing must still be
+# REFUSED, because the published scanner catches the identifier.
+check "a branch shipping a WEAKENED scanner is still REFUSED" 1 github \
+  "refs/heads/feat/weak-scanner $WEAK refs/heads/feat/weak-scanner $PUBLISHED"
+
+check "a branch that DELETES the gate is REFUSED" 1 github \
+  "refs/heads/fix/drops-scanner $DROPS refs/heads/fix/drops-scanner $PUBLISHED"
+
 # --- second stage: the published main ADVANCES ------------------------
 # The checks above all ran while the published main was $PUBLISHED, so
 # each one exercised the clause it names. Now the published main moves
@@ -197,21 +222,9 @@ check "a branch BEHIND the published main is REFUSED" 1 github \
 
 check "a branch that CARRIES the published main is ALLOWED" 0 github \
   "refs/heads/feat/ahead $AHEAD refs/heads/feat/ahead $PUBLISHED_MAIN"
-# The CONTENT check. This branch is a pure extension of the published
-# main, so every structural rule passes; only the identifier scan can
-# refuse it.
-check "a structurally valid branch carrying an identifier is REFUSED" 1 github \
-  "refs/heads/feat/has-identifier $IDENT refs/heads/feat/has-identifier $PUBLISHED"
-
 # The scanner in the PUBLISHED main is the one that must not be
 # silenced. A branch shipping a scanner that finds nothing must still be
 # REFUSED, because the published scanner catches the identifier.
-check "a branch shipping a WEAKENED scanner is still REFUSED" 1 github \
-  "refs/heads/feat/weak-scanner $WEAK refs/heads/feat/weak-scanner $PUBLISHED"
-
-check "a branch that DELETES the gate is REFUSED" 1 github \
-  "refs/heads/fix/drops-scanner $DROPS refs/heads/fix/drops-scanner $PUBLISHED"
-
 echo
 echo "passed: $pass   failed: $fail"
 [ "$fail" -eq 0 ] || exit 1
