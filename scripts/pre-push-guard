@@ -36,12 +36,32 @@
 # repository. That is exactly the leak this guard exists to prevent, so
 # the rule is now stated over PARENTS, not over ancestry.
 #
+# That fix left a second hole, and it is the one that actually bit: a
+# branch that is BEHIND the published main satisfies the parents rule
+# (its new commits' parents are all older, and therefore already in
+# the published main) while NOT containing the published main at all.
+# Such a branch can therefore REVERT a change main has already
+# published -- and the change it reverts can be the scrub that removed
+# a person's name from the public tree. A branch that does not carry
+# main's scrub can publish the name back, and the push looks clean.
+#
+# So the proof now has TWO clauses, and BOTH are required:
+#
+#   (a) the published main's tip must be an ANCESTOR of the pushed tip
+#       (the branch is not behind main), and
+#   (b) every commit the push adds has only parents that are already
+#       in the published main or already in the pushed set.
+#
+# (a) alone would still let a foreign root in via a merge; (b) alone
+# would still let a behind-main branch revert a published scrub.
+#
 # Rules for the public remote:
 #   - a DELETION is always allowed (a delete refspec has an all-zero
 #     local sha; deleting can only remove objects).
 #   - refs/heads/main is allowed -- GitHub's own protection decides.
-#   - refs/heads/{feat,fix,publish}/* are allowed ONLY if the pushed
-#     history is a pure extension of the published main.
+#   - refs/heads/{feat,fix,publish}/* are allowed ONLY if the published
+#     main is an ANCESTOR of the pushed tip (the branch is not behind
+#     main) AND the pushed history is a pure extension of it.
 #   - every other ref is REFUSED.
 #
 # Self-test: scripts/pre_push_guard_selftest.sh
@@ -66,6 +86,19 @@ published_main_sha() {
     sha=$(git rev-parse --verify --quiet "refs/remotes/$remote/main" 2>/dev/null || true)
   fi
   printf '%s' "$sha"
+}
+
+# contains_published_main <published-sha> <pushed-sha>
+#
+# True when the published main's tip is an ANCESTOR of the pushed tip --
+# i.e. the branch actually carries everything main has published.
+#
+# This is the clause that closes the "branch is BEHIND main" hole: such
+# a branch would otherwise be allowed to publish a tree that omits
+# main's latest scrub, which is how a name gets republished.
+contains_published_main() {
+  local published="$1" sha="$2"
+  git merge-base --is-ancestor "$published" "$sha" 2>/dev/null
 }
 
 # is_pure_extension <published-sha> <pushed-sha>
@@ -231,6 +264,19 @@ if is_public_remote "$remote"; then
           echo "         clone, so the branch's ancestry cannot be proven." >&2
           echo "         Fetch it first: git fetch $remote main" >&2
           exit 1
+        fi
+        if ! contains_published_main "$published" "$_local_sha"; then
+            echo "REFUSED: pushing '$_remote_ref' to '$remote'." >&2
+            echo "         The published main ($published) is NOT an ancestor" >&2
+            echo "         of the branch being pushed ($_local_sha), so the" >&2
+            echo "         branch is BEHIND the published main." >&2
+            echo "         A branch behind main can REVERT something main has" >&2
+            echo "         already published -- including the scrub that removed" >&2
+            echo "         a person's name from this public tree." >&2
+            echo "         Rebase the branch onto the published main (git fetch" >&2
+            echo "         $remote main && git rebase --onto $remote/main" >&2
+            echo "         <old-base> <branch>) and push again." >&2
+            exit 1
         fi
         if is_pure_extension "$published" "$_local_sha"; then
           continue

@@ -118,6 +118,34 @@ def _logo_image(user, width=4*cm, height=2*cm):
 
 
 
+def _esc(text):
+    """Escape text for a reportlab `Paragraph`.
+
+    `Paragraph` parses a mini-markup language: `<b>` starts bold, `&amp;`
+    is an escaped ampersand. Customer-controlled text -- a customer name, a
+    line item description, a note -- is therefore MARKUP unless it is
+    escaped, and the consequences are not cosmetic:
+
+      * `<b>plus</b>` silently renders as bold, so the document shows
+        something the customer did not write;
+      * an unclosed `<b>` or an `<img src=...>` makes reportlab raise
+        ValueError, so the PDF route 500s and the quote cannot be produced
+        at all.
+
+    This helper is applied to every customer-controlled string that goes
+    into a Paragraph on the QUOTE document. The invoice path is left as it
+    is: its `description` field carries deliberate `<br/>` markup that
+    `_parse_line_items` relies on, so escaping it would change the
+    invoice's meaning. That is a separate piece of work.
+    """
+    if text is None:
+        return ''
+    return (str(text)
+            .replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;'))
+
+
 def _parse_line_items(description):
     """Parse a multi-line description into a list of (text, amount) tuples.
 
@@ -921,6 +949,236 @@ def generate_payslip_pdf(user, employee, pay_event, lines=None, business_name=No
         'kept private and stored for 7 years as required by the Fair Work Regulations 2009.',
         footer_style,
     ))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+
+def generate_quote_pdf(user, quote):
+    """
+    Generate a PDF for a quotation and return it as a bytes buffer.
+
+    Args:
+        user: User object (with business details and logo)
+        quote: Quote object (with customer)
+
+    Returns:
+        BytesIO buffer positioned at the start of the PDF data
+
+    Deliberately mirrors the invoice layout (same logo resolution, same
+    header block, same table styles) so a customer who has seen an invoice
+    recognises the quote as the same document family. What it does NOT
+    carry is bank details: a quote is a proposal, not a request for money.
+
+    When the quote has a RECURRING line (a monthly retainer), the totals
+    block shows the one-off and the recurring amounts separately, because
+    a single "TOTAL: $X" that silently includes one month of a retainer
+    reads as a one-off price.
+
+    Every customer-controlled string on this page is escaped through
+    `_esc` -- see that function for why an unescaped `<b>` in a line
+    description is a crash, not a cosmetic issue.
+    """
+    from reportlab.lib.enums import TA_RIGHT
+    from decimal import Decimal
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    elements = []
+    styles = getSampleStyleSheet()
+
+    logo_cell = []
+    _logo = _logo_image(user)
+    if _logo is not None:
+        logo_cell.append(_logo)
+
+    business_paragraphs = []
+    if user.business_name:
+        business_paragraphs.append(f'<b>{user.business_name}</b>')
+    if user.abn:
+        business_paragraphs.append(f'ABN: {user.abn}')
+    if render_address(user):
+        business_paragraphs.append(render_address(user).replace(chr(10), '<br/>'))
+    if user.contact_email:
+        business_paragraphs.append(f'Email: {user.contact_email}')
+    if user.contact_number:
+        business_paragraphs.append(f'Phone: {user.contact_number}')
+
+    business_style = ParagraphStyle('Business', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT, leading=12)
+    business_cell = [Paragraph('<br/>'.join(business_paragraphs), business_style)] if business_paragraphs else ['']
+
+    business_name_style = ParagraphStyle(
+        'BusinessName', parent=styles['Heading2'],
+        fontSize=20, alignment=0, leading=24,
+        textColor=colors.HexColor('#2c3e50'),
+        spaceAfter=0, spaceBefore=0
+    )
+    business_name_cell = [Paragraph(user.business_name, business_name_style)] if user.business_name else ['']
+
+    header_table = Table(
+        [[logo_cell, business_cell], [business_name_cell, '']],
+        colWidths=[8*cm, 8*cm]
+    )
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 4),
+        ('TOPPADDING', (0, 1), (0, 1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, 1), 0),
+    ]))
+    elements.append(header_table)
+    elements.append(Spacer(1, 0.3*cm))
+
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=28, spaceAfter=0, alignment=0, textColor=colors.HexColor('#2c3e50'))
+    title_cell = Paragraph('QUOTATION', title_style)
+    title_row = Table([[title_cell, '']], colWidths=[12*cm, 4*cm])
+    title_row.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('LINEBELOW', (0, 0), (-1, -1), 1.5, colors.HexColor('#2c3e50')),
+    ]))
+    elements.append(title_row)
+    elements.append(Spacer(1, 0.5*cm))
+
+    # NO STATUS LINE.
+    #
+    # A quotation is a PROPOSAL, and the customer is reading it to decide
+    # whether to accept it. Printing our internal workflow state on the
+    # face of the document tells the reader something about OUR process
+    # and nothing about the offer -- and it is wrong the moment the
+    # document is transmitted, because the PDF is rendered on demand and
+    # the bytes that go out are rendered from the state at that instant.
+    # A quotation that had been sent but was rendered a second earlier
+    # says "Draft" on its face, and the customer holds a document that
+    # contradicts the record.
+    #
+    # The invoice PDF makes the same choice: it prints the due date and
+    # no status. A status is a fact about the ledger, not about the
+    # document's value to the reader.
+    info_data = [
+        ['Quote Date:', str(quote.quote_date), 'Quote #:', quote.quote_number],
+        ['Valid Until:', str(quote.valid_until) if quote.valid_until else 'N/A', '', ''],
+    ]
+    info_table = Table(info_data, colWidths=[3*cm, 5*cm, 3*cm, 5*cm])
+    info_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TEXTCOLOR', (0, 0), (0, -1), colors.grey),
+        ('TEXTCOLOR', (2, 0), (2, -1), colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 0.5*cm))
+
+    elements.append(Paragraph('<b>Quote To:</b>', styles['Heading3']))
+    customer = quote.customer
+    customer_info = f"<b>{_esc(customer.name)}</b><br/>"
+    if customer.contact_name:
+        customer_info += f"Attn: {_esc(customer.contact_name)}<br/>"
+    if render_address(customer):
+        customer_info += f"{_esc(render_address(customer)).replace(chr(10), '<br/>')}<br/>"
+    if customer.contact_email:
+        customer_info += f"Email: {_esc(customer.contact_email)}<br/>"
+    if customer.contact_number:
+        customer_info += f"Phone: {_esc(customer.contact_number)}<br/>"
+    if customer.abn:
+        customer_info += f"ABN: {_esc(customer.abn)}<br/>"
+    elements.append(Paragraph(customer_info, styles['Normal']))
+    elements.append(Spacer(1, 0.5*cm))
+
+    items_data = [['Description', 'Amount']]
+    for line in (quote.lines or []):
+        description = str(line.get('description', ''))
+        if line.get('recurring'):
+            description = f"{description} (recurring {line.get('period', 'monthly')})"
+        items_data.append([
+            Paragraph(_esc(description), styles['Normal']),
+            f"${Decimal(str(line.get('amount', 0))):,.2f}",
+        ])
+    items_table = Table(items_data, colWidths=[12*cm, 4*cm])
+    items_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (-1, 0), (-1, -1), 'RIGHT'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+    ]))
+    elements.append(items_table)
+    elements.append(Spacer(1, 0.3*cm))
+
+    # A quote with a retainer must not present one TOTAL that silently
+    # includes one month of it: the customer would read the figure as a
+    # one-off price. So the totals block splits the one-off from the
+    # recurring amount and says that the total covers the FIRST period.
+    #
+    # Thousands separators are used throughout, including here, because
+    # the line items above already carry them ("$6,000.00"); a total
+    # that reads "$6100.00" beside a line that reads "$6,000.00" looks
+    # like a different number.
+    if quote.recurring_amount > 0:
+        totals_data = [
+            ['One-off subtotal (ex GST):', f"${quote.one_off_amount:,.2f}"],
+            [f'Recurring ({quote.recurring_period}, ex GST):',
+             f"${quote.recurring_amount:,.2f}"],
+            ['Subtotal, first period (ex GST):', f"${quote.ex_gst_amount:,.2f}"],
+        ]
+        total_label = 'TOTAL, first period:'
+    else:
+        totals_data = [
+            ['Subtotal (ex GST):', f"${quote.ex_gst_amount:,.2f}"],
+        ]
+        total_label = 'TOTAL:'
+    totals_data.append([f'GST ({float(quote.gst_type)*100:.0f}%):', f"${quote.gst_amount:,.2f}"])
+    totals_data.append([total_label, f"${quote.total_amount:,.2f}"])
+    totals_table = Table(totals_data, colWidths=[12*cm, 4*cm])
+    totals_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (-1, 0), (-1, -1), 'RIGHT'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LINEABOVE', (0, -1), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, -1), (-1, -1), 12),
+    ]))
+    elements.append(totals_table)
+
+    # A zero-GST quote must say WHY, in the words that match the actual
+    # reason -- "outside Australia" and "not registered" are different
+    # facts and only one of them is true for any given customer. The
+    # wording comes from app/shared/tax.py so the document and the API
+    # cannot disagree.
+    from app.shared.tax import gst_note_for_basis
+    # Render from the STORED basis, so the document says what it said
+    # when it was raised. A quote that changed its tax wording because
+    # the customer record was edited afterwards is a document that lies.
+    note = gst_note_for_basis(quote.gst_basis)
+    if not note and not quote.gst_basis:
+        # A quote raised before the basis was captured: fall back to the
+        # live record rather than printing nothing.
+        from app.shared.tax import gst_note
+        note = gst_note(customer, user, quote.gst_type)
+    if note:
+        elements.append(Spacer(1, 0.4*cm))
+        elements.append(Paragraph(f'<i>{_esc(note)}</i>', styles['Normal']))
+
+    if quote.notes:
+        elements.append(Spacer(1, 0.7*cm))
+        elements.append(Paragraph('<b>Notes:</b>', styles['Heading3']))
+        elements.append(Paragraph(_esc(quote.notes).replace(chr(10), '<br/>'), styles['Normal']))
+
+    elements.append(Spacer(1, 1*cm))
+    validity = f'This quotation is valid until {quote.valid_until}.' if quote.valid_until else 'This quotation is subject to confirmation.'
+    elements.append(Paragraph(f'<i>{validity}</i>', styles['Normal']))
 
     doc.build(elements)
     buffer.seek(0)
