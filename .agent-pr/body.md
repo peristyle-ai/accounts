@@ -1,69 +1,77 @@
 ## What
 
-One commit. It does two things: it removes two identifiers that were on
-a public page, and it adds the gate that should have stopped them.
+The quotations feature: a quote is a PROPOSAL, separate from an invoice
+because the two have different lifecycles (a quote expires; an invoice is
+paid or overdue) and different required fields (a quote needs a validity
+date; an invoice needs a due date).
 
 | file | change |
 |---|---|
-| `app/hmi/routes.py` | a customer's UNIX ACCOUNT, in a comment about receipt previews |
-| `app/api/routes.py` | two CRM names, in comments about `project_code` / `project_name` |
-| `scripts/check_no_identifiers.py` | **new**: the identifier gate |
-| `scripts/pre-push-guard` | the guard now scans the tree being PUSHED |
-| `scripts/pre_push_guard_selftest.sh` | a ninth case: a structurally valid branch carrying an identifier is REFUSED |
-| `.github/workflows/tests.yml` | a CI step beside the secret scan |
-| `tests/test_no_identifiers.py` | **new**: 15 tests |
+| `app/models/quote.py` | the model, and the amount arithmetic |
+| `app/api/quotes.py` | the routes, and the lifecycle transitions |
+| `app/shared/tax.py` | **new**: the GST rules, in one place |
+| `app/shared/pdf.py` | the quote PDF |
+| `schema/init.sql` | the table |
+| `schema/migrations/2026-10-30_add_quotes.sql` | the table, for an existing install |
+| `schema/migrations/2026-11-01_add_quote_gst_basis.sql` | why the document carries the tax treatment it carries |
+| `schema/migrations/2026-11-01_add_quote_transmission.sql` | the transmission record |
+| `tests/test_quotes.py` | 22 tests |
+| `tests/test_quote_tax_and_recurring.py` | the tax and recurring-line rules |
+| `tests/test_quote_transmission.py` | the transmission record |
 
-## The identifiers
+Also carries the identifier gate and the scrub of two customer
+identifiers that were on a public page (PR #5's branch), so this branch's
+tree carries no identifier and the pre-push guard actually runs.
 
-A credential is secret-shaped, so the secret scan finds it. A person's
-or a customer's NAME is not secret-shaped, so nothing finds it — and the
-name sits on a public page until somebody reads the diff.
+## The model
 
-Both of these were in COMMENTS, which is the part nobody scrubs. They
-are now described without the names: `<upload root>`, "a CRM", "the
-CRM". The explanation is unchanged, because the names added nothing to
-it.
+**Line items are JSONB**, not encoded into a text description the way
+invoices do it. The line items are what the customer negotiates, so they
+must round-trip exactly -- you cannot rebuild a line item table from a
+string you have to parse.
 
-## The gate
+**Amounts are derived, never accepted raw.** The API takes line items and
+derives ex-GST / GST / total. If the arithmetic could drift from the
+lines the customer sees, the quote is not a quote -- it is a number.
 
-`scripts/check_no_identifiers.py` refuses:
+**Transitions are separate endpoints**, so an illegal one (accepted ->
+draft) cannot be expressed. It is a 409.
 
-* a trading name with a corporate suffix,
-* an email at a domain that is not a reserved placeholder,
-* a unix account in a path,
-* a name-shaped pair of words in a contact context,
-* a proper name after "the work:" — the exact sentence that started this.
+**GST is derived, in one place** (`app/shared/tax.py`), consulted by both
+the API and the PDF. A quote that says "no GST" on its face and carries
+10% in its totals is a defective artefact, and the cheapest way to prevent
+that is one function that answers the question. The BASIS is stored with
+the quote, so a document cannot change its tax wording after it is issued.
 
-It **asserts its own input** (with no files to scan it fails loudly
-rather than reporting zero findings), it has a **self-test**, and each
-rule is shown to fire. Its own samples are assembled at RUNTIME from
-parts: a regression fixture that spelled the name out would put the
-name back into a tracked file — the very defect the gate exists to
-catch. The source of the gate must not trip the gate.
+**A line may be RECURRING** -- a monthly retainer rather than a one-off.
+The totals then cover the first period and the PDF shows the one-off and
+recurring subtotals separately, because a single "TOTAL: $7,100" beside a
+$100/month line reads as a one-off price.
 
-## Why the guard changed
-
-The pre-push guard proved which refs may be pushed and that the history
-extends the published `main`. It could not see a name inside a file —
-structure is not content. It now scans the tree being PUSHED, not the
-working tree, because a branch can be checked out at something else
-entirely and what is published is the tree of the commit being pushed.
-
-The self-test gained the case that matters: a branch that is a pure
-extension of the published `main` — so every ancestry and parents rule
-passes — but whose tree carries an identifier is REFUSED. Only a
-content check can refuse it, which is exactly why it needed one.
+**The transmission record** (`sent_via`, `sent_to`, `sent_document_sha256`)
+is the part added last, and it exists because "it was sent" is a claim
+about a document that left the building. `status` and `sent_at` said only
+that the system was told it went out. The three new columns say HOW it
+left -- and that is the distinction that carries the evidential weight,
+because `email_system` leaves a delivery record in the mail server and
+`email_manual` leaves this row as the only evidence there is -- WHERE it
+went, and WHICH BYTES went out. The quote PDF is rendered on demand, so
+two renders are different files; without the hash of the transmitted
+artefact there is no way to prove later what the recipient holds.
 
 ## Verification
 
-* `scripts/check_no_identifiers.py` — GREEN on this tree, and it
-  **FAILS (exit 1) on the pre-scrub tree it was written for**. A check
-  that has never been shown to fail is not evidence.
-* `scripts/pre_push_guard_selftest.sh` — 9 cases, 9 passed.
-* `pytest` — 430 passed, 4 skipped.
+* `pytest` -- 472 passed, 2 skipped.
+* `scripts/check_no_identifiers.py` -- GREEN on this tree.
+* `scripts/pre_push_guard_selftest.sh` -- 11 cases, 11 passed.
+* Six injected regressions were each confirmed to FAIL the suite:
+  accepting any `sent_via`, accepting any sha256, ignoring the supplied
+  `sent_at`, assigning to the ORM object before validating, inferring the
+  channel instead of leaving it unset, and responding with the
+  transmission record without storing it.
 
-## Still open (not this PR)
+## Not deployed
 
-The published `main`'s HISTORY carries an identifier in its root commit,
-and a tree fix cannot reach it. That is the separate, larger job — a
-repository replace — and it is not something a branch can do.
+The quotes API is not in production yet -- this branch is the PR. The
+table exists in the live database and the API returns 404 until it
+merges.
