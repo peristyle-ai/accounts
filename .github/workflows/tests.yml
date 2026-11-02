@@ -29,6 +29,9 @@ jobs:
       - name: no secret was committed
         run: python scripts/check_no_secrets.py
 
+      - name: no identifier was committed
+        run: python scripts/check_no_identifiers.py
+
   pytest:
     runs-on: ubuntu-latest
 

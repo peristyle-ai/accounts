@@ -161,11 +161,31 @@ def restore_user(app):
 
     BUSINESS_EMAIL = business_email()
     snap = None
+    profile_snap = None
 
     with app.app_context():
         u = User.query.filter_by(email=BUSINESS_EMAIL).first()
         if u is not None:
             snap = {col.name: getattr(u, col.name) for col in u.__table__.columns}
+            # The business ADDRESS lives in accounts.user_profiles, NOT
+            # in the users table -- `User.address_line1` is a property
+            # that reads through the profile. So snapshotting
+            # User.__table__.columns alone snapshots NOTHING of the
+            # address, and the test that mutates it leaves the
+            # production row holding whatever the test wrote.
+            #
+            # This is the bug this fixture was introduced to fix, and
+            # the fix did not reach the address: the docstring above
+            # describes a corruption that had already happened once.
+            # The suite runs against LIVE production Postgres, so a
+            # snapshot that misses a column is a snapshot that
+            # corrupts production.
+            profile = getattr(u, 'profile', None)
+            if profile is not None:
+                profile_snap = {
+                    col.name: getattr(profile, col.name)
+                    for col in profile.__table__.columns
+                }
 
     yield
 
@@ -178,4 +198,9 @@ def restore_user(app):
             return
         for k, v in snap.items():
             setattr(u, k, v)
+        if profile_snap is not None:
+            profile = getattr(u, 'profile', None)
+            if profile is not None:
+                for k, v in profile_snap.items():
+                    setattr(profile, k, v)
         db.session.commit()

@@ -40,7 +40,14 @@ git config user.name test
 git config user.email test@example.invalid
 git config commit.gpgsign false
 echo a > a.txt
-git add a.txt
+# The PUBLISHED ROOT carries the scanner, because once the gate has been
+# merged that is what main looks like -- and the rules the guard applies
+# differ depending on whether the published main has a scanner. A fixture
+# where main does NOT have one would exercise the wrong branch of the
+# logic and let a broken guard pass.
+mkdir -p scripts
+cp "$REPO_ROOT/scripts/check_no_identifiers.py" scripts/check_no_identifiers.py
+git add a.txt scripts/check_no_identifiers.py
 git commit -q -m "A: the published root"
 A=$(git rev-parse HEAD)
 git branch -M main
@@ -74,6 +81,52 @@ git checkout -q -b publish/grafted "$PUBLISHED"
 git merge -q --no-ff --allow-unrelated-histories -m "graft" "$ORPHAN" >/dev/null 2>&1 || true
 GRAFTED=$(git rev-parse HEAD)
 
+# a branch that is STRUCTURALLY fine -- it descends from the published
+# main, so every ancestry and parents rule passes -- but whose TREE
+# carries a customer's identifier. Only a CONTENT check can refuse it.
+git checkout -q -b feat/has-identifier "$PUBLISHED"
+# The sample names are SYNTHETIC on purpose, and assembled by printf
+# from separate arguments. A regression fixture that spelled the name
+# out would put that name back into a tracked file -- which is the very
+# defect this gate exists to catch. (The scanner's own samples are
+# built the same way, in scripts/check_no_identifiers.py.)
+# Every piece is split, so that no contiguous string in THIS FILE can
+# match any rule -- the source of the gate must not trip the gate.
+printf 'This is the case that started the work: %s%s %s%s\n' \
+  "Nor" "thwind" "Tra" "ding Inc." > leak.txt
+printf 'contact %s%s@%s%s\n' \
+  "le" "ad" "northwind-trading" ".example" >> leak.txt
+git add leak.txt
+git commit -q -m "E: a branch carrying a customer identifier"
+IDENT=$(git rev-parse HEAD)
+
+# A branch that ships a WEAKENED scanner -- one that finds nothing --
+# while the PUBLISHED main carries the real one. The guard must run the
+# published scanner too, so the weakening buys nothing.
+git checkout -q -b feat/weak-scanner "$PUBLISHED"
+cat > scripts/check_no_identifiers.py <<'WEAKEOF'
+#!/usr/bin/env python3
+# A scanner that never finds anything.
+import sys
+print("identifier scan: 0 finding(s)")
+print("IDENTIFIER SCAN GREEN")
+sys.exit(0)
+WEAKEOF
+# The identifier rides along with the weakened scanner -- that is the
+# realistic attack: silence the scanner AND publish the name.
+printf 'This is the case that started the work: %s%s %s%s\n' \
+  "Nor" "thwind" "Tra" "ding Inc." > leak.txt
+git add scripts/check_no_identifiers.py leak.txt
+git commit -q -m "G: a branch that ships a weakened scanner"
+WEAK=$(git rev-parse HEAD)
+
+# A branch that DELETES the scanner the published main carries. That is
+# the gate being removed, so it must be REFUSED.
+git checkout -q -b fix/drops-scanner "$PUBLISHED"
+git rm -q scripts/check_no_identifiers.py
+git commit -q -m "H: a branch that removes the gate"
+DROPS=$(git rev-parse HEAD)
+
 echo "pre-push guard self-test"
 echo
 
@@ -101,6 +154,77 @@ check "main is passed through to GitHub's own protection" 0 github \
 check "a non-public remote is not governed by the guard" 0 origin \
   "refs/heads/archive-head $ORPHAN refs/heads/archive-head $A"
 
+# The CONTENT check. This branch is a pure extension of the published
+# main, so every structural rule passes; only the identifier scan can
+# refuse it.
+#
+# It runs BEFORE the second stage below advances the published main. After
+# that advance, this branch would be BEHIND the published main and would be
+# refused by the behind-main clause instead -- so it would pass for the
+# WRONG reason, and a test that passes for the wrong reason is worse than
+# no test.
+check "a structurally valid branch carrying an identifier is REFUSED" 1 github \
+  "refs/heads/feat/has-identifier $IDENT refs/heads/feat/has-identifier $PUBLISHED"
+
+# The scanner in the PUBLISHED main is the one that must not be silenced.
+# A branch shipping a scanner that finds nothing must still be REFUSED,
+# because the published scanner catches the identifier. And a branch that
+# DELETES the gate must be REFUSED outright.
+# The scanner in the PUBLISHED main is the one that must not be
+# silenced. A branch shipping a scanner that finds nothing must still be
+# REFUSED, because the published scanner catches the identifier.
+check "a branch shipping a WEAKENED scanner is still REFUSED" 1 github \
+  "refs/heads/feat/weak-scanner $WEAK refs/heads/feat/weak-scanner $PUBLISHED"
+
+check "a branch that DELETES the gate is REFUSED" 1 github \
+  "refs/heads/fix/drops-scanner $DROPS refs/heads/fix/drops-scanner $PUBLISHED"
+
+# --- second stage: the published main ADVANCES ------------------------
+# The checks above all ran while the published main was $PUBLISHED, so
+# each one exercised the clause it names. Now the published main moves
+# on -- a scrub lands and is published -- and the tree on main no longer
+# holds what that scrub removed.
+#
+# This stage is deliberately AFTER the checks above: advancing main first
+# would make the foreign-root cases fail for the WRONG reason (the new
+# behind-main clause, not the foreign-parent rule), and a test that
+# passes for the wrong reason is worse than no test.
+git checkout -q main
+echo scrub > scrub.txt
+git add scrub.txt
+git commit -q -m "S: the published main removes a name"
+PUBLISHED_MAIN=$(git rev-parse HEAD)
+git push -q github main
+
+# a branch cut BEFORE the scrub -- so it is BEHIND the published main, and
+# its tree still holds what the scrub removed. This is the branch that
+# would REPUBLISH the scrubbed content if the guard allowed it.
+git checkout -q -b feat/behind "$PUBLISHED"
+echo d > d.txt
+git add d.txt
+git commit -q -m "D: a PR branch cut before the scrub"
+BEHIND=$(git rev-parse HEAD)
+
+# and a branch that DOES carry the published main, cut after the scrub
+git checkout -q -b feat/ahead "$PUBLISHED_MAIN"
+echo e > e.txt
+git add e.txt
+git commit -q -m "E: a PR branch that carries the published main"
+AHEAD=$(git rev-parse HEAD)
+
+# THE CASE THAT ACTUALLY BIT: a branch that is BEHIND the published main.
+# It satisfies the parents rule (its commits' parents are all older, and
+# so already in the published main) yet does not carry main's latest
+# scrub -- so it can publish the scrubbed content back. This must be
+# REFUSED, or a name comes back to the public repository.
+check "a branch BEHIND the published main is REFUSED" 1 github \
+  "refs/heads/feat/behind $BEHIND refs/heads/feat/behind $PUBLISHED_MAIN"
+
+check "a branch that CARRIES the published main is ALLOWED" 0 github \
+  "refs/heads/feat/ahead $AHEAD refs/heads/feat/ahead $PUBLISHED_MAIN"
+# The scanner in the PUBLISHED main is the one that must not be
+# silenced. A branch shipping a scanner that finds nothing must still be
+# REFUSED, because the published scanner catches the identifier.
 echo
 echo "passed: $pass   failed: $fail"
 [ "$fail" -eq 0 ] || exit 1
