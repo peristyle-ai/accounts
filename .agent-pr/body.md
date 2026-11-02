@@ -1,39 +1,43 @@
 ## What
 
-The `agent-pr` workflow only triggered on `agent/**` and `fix/**`, but the
-pre-push guard permits `refs/heads/{feat,fix,publish}/*` to the public
-remote. A `feat/` branch was therefore **published with no pull request
-ever opened for it**: the guard allowed the push and the workflow that was
-supposed to open the PR never fired.
-
-That is how `feat/quotes` ended up with no PR — it sat published and
-unmergeable, and the only route to merging it was for a human to open
-the PR by hand.
+This branch is the **invoice tax basis** work, rebased onto the current
+`main`:
 
 | file | change |
 |---|---|
-| `.github/workflows/agent-pr.yml` | the trigger list now covers every pattern the guard permits |
-| `tests/test_agent_pr_triggers.py` | **new**: asserts the two lists agree |
+| `app/models/invoice.py` | the invoice carries its currency, its tax basis and its terms |
+| `app/api/routes.py` | the routes read and validate those fields |
+| `app/shared/tax.py` | the GST rules, in one place |
+| `app/shared/pdf.py` | the invoice PDF prints the tax treatment it carries |
+| `schema/init.sql` | the columns |
+| `schema/migrations/2026-11-02_add_invoice_gst_basis.sql` | the columns, for an existing install |
+| `tests/test_invoice_tax_basis.py` | the tax-basis rules |
+| `tests/test_quote_tax_and_recurring.py` | the tax and recurring-line rules |
 
-## Why the test, and not just the change
+The invoice description is deliberately left alone: it carries intentional
+`<br/>` markup that the line-item parser relies on.
 
-The two lists have to agree, and they can drift apart silently — that is
-exactly how this happened. So the agreement is asserted on every CI run.
+## Why the branch was rebased (2026-11-03)
 
-The test lives in `tests/`, not in a comment, and it does **not** touch
-`.github/workflows/`. That matters: a pull request that modifies a
-workflow file has its `pull_request` CI **held** awaiting a maintainer's
-approval, so asserting the rule from inside a workflow file would mean
-the assertion could not run without a human.
+This branch was cut before the identifier scrub and before the quotes
+feature landed, so its history carried a mailbox and its content
+duplicated work that is already on `main` (#5's scrub, #6's quotes, #8's
+migrations). A straight rebase conflicted in the quotes files.
 
-The test was proven by mutation — removing `feat/**` from the workflow
-makes it fail, and restoring it makes it pass. Its first version parsed
-the workflow with a regex, and the regex stopped at a comment line and
-saw only two of the four patterns; it now parses the YAML, because a
-scanner that silently stops early is worse than no scanner.
+So the branch was rebuilt as **`main` + this work only**:
 
-## Why this is a separate PR from the quotes feature
+- `feat(invoices): the invoice states its currency, its tax basis and its
+  terms` — the author is preserved; the feature commit applied cleanly onto
+  `main`'s code, so nothing in the tax or PDF logic was rewritten by hand.
+- `chore(pr): this text`.
 
-Same reason, in the other direction: bundling a workflow change with a
-feature would hold that feature's CI too. `feat/quotes` is a feature PR
-and its CI runs normally.
+The title and body that were on the branch described the **quotes**
+feature, which landed as #6 — they are replaced here with what the branch
+actually carries.
+
+## Verified
+
+- identifier scan GREEN on the branch tree (184 files, 0 findings);
+- no mailbox anywhere in the branch's history;
+- the repository's own pre-push guard allows the ref;
+- the branch carries the published `main`.
