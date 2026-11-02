@@ -8,8 +8,9 @@ Ownership is resolved from the data, not from the request path alone:
 
   * ``payslips/<user_id>/<file>`` -- the path segment IS the owner.
   * everything else -- the stored path column of the record that owns
-    the file is consulted (expenses, invoices, pay events, logos, OCR
-    queue, BAS lodgements, payment reconciliations, invoice reminders).
+    the file is consulted (expenses, invoices, quotes, pay events, logos,
+    OCR queue, BAS lodgements, payment reconciliations, invoice
+    reminders).
 
 If ownership cannot be established, the file is NOT served. Denying by
 default is the only safe answer to "who does this belong to?".
@@ -44,6 +45,7 @@ def _owner_from_database(rel_path):
     from app.models.expense import Expense
     from app.models.invoice import Invoice
     from app.models.pay_event import PayEvent
+    from app.models.quote import Quote
     from app.models.user_profile import UserProfile
 
     candidates = (rel_path, f'uploads/{rel_path}')
@@ -72,6 +74,9 @@ def _owner_from_database(rel_path):
     checks = (
         (Expense, 'attachment_path'),
         (Invoice, 'attachment_path'),
+        # The quote PDF that was transmitted: the quote owns it, so the
+        # file is served to the quote's tenant and to nobody else.
+        (Quote, 'attachment_path'),
         (PayEvent, 'payslip_pdf_path'),
         (UserProfile, 'logo_path'),
     )
