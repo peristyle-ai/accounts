@@ -21,6 +21,11 @@
 
     <p><a href="{{ url_for('hmi.new_invoice') }}" class="btn btn-primary">New Invoice</a></p>
 
+    {# 2026-11-02 (Jessica): money-IN worklist -- client invoices pending
+       payment, with a Received button. Mirror of the expenses' "Payment
+       Due" table. #}
+    {% include '_receivables_partial.html' %}
+
     {% if invoices %}
     <table>
         <thead>

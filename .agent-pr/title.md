@@ -1,1 +1,1 @@
-feat(invoices): the invoice states its currency, its tax basis and its terms
+fix(tests): the suite must not leave residue in the LIVE database
