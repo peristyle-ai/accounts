@@ -84,6 +84,43 @@ _CORPORATE_RE = re.compile(
 )
 _HOME_RE = re.compile(r"/(?:home|Users)/([A-Za-z0-9._-]+)/")
 
+# A real STREET ADDRESS -- a number, then a name, then a street type.
+#
+# WHY THIS EXISTS: the business's own address was published in a public
+# test fixture, on every branch, for months. It is not a person's name,
+# so the name rules could not see it, and a secret scan cannot see it
+# either -- an address is not a credential.
+#
+# The rule matches the SHAPE and the allowlist names the repo's own
+# placeholders. The ATO's published sample row is public data and is
+# allowlisted as such.
+#
+# The name tokens are the discriminator: the repo's placeholders are
+# built from a fixed vocabulary (Example, Test, Sample, ...), and a
+# REAL street name is not in it.
+_STREET_RE = re.compile(
+    r"\b\d+(?:[A-Za-z]*/\d+[A-Za-z]*)?\s+"
+    r"((?:[A-Z][A-Za-z'.-]+\s+){1,3})"
+    r"(St|Street|Rd|Road|Place|Ave|Avenue|Blvd|Court|Ct|Close|Crescent|"
+    r"Esplanade|Parade|Terrace|Circuit|Mews|Square|Highway|Grove|Walk|"
+    r"Lane|Ln|Drive|Dr|Tce|Cres)\b"
+)
+
+# The name tokens this repo uses for PLACEHOLDER addresses. A street
+# whose every name token is in this list is the repo's own placeholder.
+ALLOWED_STREET_NAME_TOKENS = {
+    "Example", "Test", "Some", "Sample", "Legacy", "Updated",
+    "Something", "Main", "Smith", "Unit", "Original", "Tenant",
+    "Specific", "Corner", "Real", "Fake", "Placeholder", "Random",
+    "Invalid", "Dummy", "Street", "Road", "Address",
+}
+
+# The ATO's own published sample row (tests/fixtures/stp_ato_sample.csv).
+# Public data, not ours.
+ALLOWED_STREET_ADDRESSES = {
+    "6 Best Street",
+}
+
 # A name-shaped token: two capitalised words, e.g. a personal name.
 # Deliberately narrow -- "Open the Original", "Payment Reference"
 # and every sentence start must not match.
@@ -287,6 +324,16 @@ def scan_text(rule: str, path: str, text: str, findings: list[Finding]) -> None:
             findings.append(Finding(rule, path, i,
                                     "a proper name after 'the work:'"))
 
+        for m in _STREET_RE.finditer(line):
+            address = m.group(0).strip()
+            if address in ALLOWED_STREET_ADDRESSES:
+                continue
+            tokens = [tok.strip(".,'") for tok in m.group(1).split()]
+            if tokens and all(tok in ALLOWED_STREET_NAME_TOKENS for tok in tokens):
+                continue
+            findings.append(Finding(rule, path, i,
+                                    f"street address {address!r}"))
+
 
 _COMMON_SECOND_WORDS = {
     "the", "a", "an", "and", "or", "but", "if", "when", "each", "both",
@@ -408,6 +455,10 @@ _LEAD = "le" + "ad"
 _PERSON = "Ameli" + "a Hart" + "ley"
 _PERSON2 = "Jord" + "an Va" + "le"
 _ACCOUNT = "some" + "user"
+# A house number and a street NAME, assembled from parts so the source
+# of the gate does not itself carry a real address.
+_REAL_HOUSE_NO = str(4) + str(2)
+_REAL_STREET_NAME = "Metro" + "plex"
 
 SELF_TEST_CASES = [
     ("email", f"contact us at {_LEAD}@{_DOMAIN} please"),
@@ -429,6 +480,15 @@ SELF_TEST_CASES = [
     # Single quotes, and no trailing punctuation: the shape must not
     # depend on how the example was punctuated.
     ("quoted_name", "e.g. '" + _PERSON2 + "'"),
+    # A real street address, in the exact shape the business's own
+    # address had. The source of the gate must not carry the address
+    # itself, so the sample is assembled from parts.
+    ("address", _REAL_HOUSE_NO + " " + _REAL_STREET_NAME + " St"),
+    # The same address with a unit/slash form.
+    ("address", "2/" + _REAL_HOUSE_NO + " " + _REAL_STREET_NAME + " Street"),
+    # The same address in a COMMENT -- the form the earlier name leak
+    # took, and the form a rule narrowed to code-only would miss.
+    ("address", "# the old office was " + _REAL_HOUSE_NO + " " + _REAL_STREET_NAME + " St"),
 ]
 
 
