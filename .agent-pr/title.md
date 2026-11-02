@@ -1,1 +1,1 @@
-feat(quotes): a quotation feature, and a transmission record for it
+ci: open the pull request for feat/ and publish/ branches too
