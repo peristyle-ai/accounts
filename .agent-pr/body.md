@@ -7,9 +7,10 @@ list.
 
 It happened. **1,029 junk customers and 8 junk invoices** had accumulated
 in production from the address-refactor and invoice-tax suites. The
-production business address was also overwritten with a test placeholder
-(`99 New St, Brisbane, QLD 4000`) — twice, on 2026-11-02 and
-2026-11-03 — and **the tests passed both times**.
+production business address was also overwritten with a **test
+placeholder** — twice, on 2026-11-02 and 2026-11-03 — and **the tests
+passed both times**. (The placeholder is the fixture's own fake street
+address; it is not written out here, because this repository is public.)
 
 ## The three changes
 
@@ -59,8 +60,8 @@ loudly** if it changed.
   live database** during a normal run. The suite still passed. The guard
   is what prevents the leak, which is why this needed proving.
 - **Disable the profile restore** → the guard's assertion fired with the
-  exact corruption (`99 New St, Brisbane, QLD 4000`) and failed the
-  session.
+  exact corruption (the fixture's placeholder address, city and postcode)
+  and failed the session.
 
 ## The guard's own safety property is tested
 
