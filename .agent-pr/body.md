@@ -1,89 +1,60 @@
 ## What
 
-The accounts test suite runs against **live production Postgres** — there
-is no test database. So a row a test creates and does not delete is a row
-in the business's ledger, visible in the customer list and the invoice
-list.
+Peristyle now issues invoices to customers outside Australia. The business
+phone was printed in DOMESTIC form on every customer-facing document. The
+leading `0` of an Australian number is a trunk prefix, not part of the
+number, and there is no country code -- so a recipient outside Australia
+cannot dial what the invoice says.
 
-It happened. **1,029 junk customers and 8 junk invoices** had accumulated
-in production from the address-refactor and invoice-tax suites. The
-production business address was also overwritten with a **test
-placeholder** — twice, on 2026-11-02 and 2026-11-03 — and **the tests
-passed both times**. (The placeholder is the fixture's own fake street
-address; it is not written out here, because this repository is public.)
+The conversion happens at RENDER time only. The stored value is never
+rewritten: the ledger keeps the number as it was recorded, the Xero export
+keeps its own convention, and only the document changes.
 
-## The three changes
+| document | business phone | customer phone |
+|---|---|---|
+| invoice | international | international |
+| statement of account | international | international |
+| quotation | international | international |
+| pay slip | **domestic (unchanged)** | n/a |
+
+The pay slip is a deliberate exception: it goes to an Australian employee,
+there is no international audience to serve, and the payroll record reads
+better in the form it was entered. There is a test that pins that decision,
+so it cannot drift into the customer documents by accident.
+
+## The rule
+
+The converter is conservative. It replaces a leading trunk `0` with `+61`
+only when the string looks like a domestic Australian number. A number that
+is already international, a foreign number without a country code, an
+international access prefix, or a fragment too short to be a phone number
+is returned **unchanged** -- a formatter that mangles what it does not
+understand is worse than one that does nothing.
+
+It is also idempotent: formatting an already-formatted number changes
+nothing.
+
+## Files
 
 | file | change |
 |---|---|
-| `tests/conftest.py` | `restore_user` also snapshots and restores the **profile** row; a session-scoped autouse guard sweeps residue; the guard **asserts** the business address is unchanged and fails the session loudly if it is not |
-| `tests/test_prod_residue_guard.py` | **new**: covers the guard's rules *and its safety property* |
-
-### 1. `restore_user` never reached the address
-
-The business ADDRESS lives in `accounts.user_profiles`, not in the `users`
-table: `User.address_line1` is a **property** that reads through the
-profile. So snapshotting `User.__table__.columns` snapshots *nothing* of
-the address, and a test that mutates it leaves production holding
-whatever the test wrote.
-
-The fixture was introduced to stop exactly this corruption, and its own
-docstring describes it. It did not reach the address, because the address
-had already moved out of the table it snapshotted.
-
-### 2. A session-scoped guard, not per-test cleanup
-
-The guard is **session-scoped and autouse**, so it runs for every test
-session — including one that runs a single file. A per-test cleanup is
-only as good as the tests that remembered to write one, and the leaking
-tests predate the rule.
-
-It recognises residue by the **test-name prefixes the suite uses**, never
-by a real customer's name, and it refuses to sweep anything that is not
-unmistakably a draft — a sent or paid invoice is business state whatever
-it is called. It also sweeps the audit rows that recorded the test
-writes (the log grew 164 rows per run, recording creations of rows that
-no longer exist), under a deliberately narrow rule: a log row goes only
-if the row it describes did not exist before this session **and** does not
-exist now — so a real business action taken during the session keeps its
-audit trail.
-
-### 3. The guard asserts the address
-
-The corruption passed twice because nothing checked. The guard compares
-the business address before and after the session and **fails the session
-loudly** if it changed.
-
-## Proven by mutation, not by inspection
-
-- **Neuter the residue matcher** → exactly **5 customers leaked into the
-  live database** during a normal run. The suite still passed. The guard
-  is what prevents the leak, which is why this needed proving.
-- **Disable the profile restore** → the guard's assertion fired with the
-  exact corruption (the fixture's placeholder address, city and postcode)
-  and failed the session.
-
-## The guard's own safety property is tested
-
-A guard that deletes real business data is worse than no guard. The tests
-assert that **no real customer and no real invoice** can be recognised as
-residue, and that a sent/paid invoice is never swept.
-
-The real names are read from the **live database at runtime**, not written
-here: this repository is **public**, and a hardcoded list of customer
-names in a tracked file is the same mistake this branch exists to prevent.
-Reading them live is also the stronger test — it covers every real
-customer, including any added later.
+| `app/shared/phone.py` | **new**: the converter, with its rules stated in the module docstring |
+| `app/shared/pdf.py` | the six render sites (3 documents x business/customer phone) use the converter |
+| `tests/test_phone_international.py` | **new**: 19 tests -- the conversion, the refusals, idempotence, the rendered invoice's TEXT, that the stored number is untouched, and that the pay slip stays domestic |
 
 ## Verification
 
-- **496 passed, 2 skipped** on the deployed code (521 on the branch).
-- Production verified **unchanged** after a full run: 5 customers, 21
-  invoices, 3 quotes, business address intact.
-- The identifier gate and the secret scan are green on the branch.
+- Full suite: **562 passed, 2 skipped**.
+- The suite runs against LIVE production Postgres. Counts before and after
+  the run are identical (6 customers, 21 invoices, 4 quotes, 1 draft) and
+  the business address is intact.
+- **Four injected weakenings each fail the suite**: the render call
+  removed, the converter neutered, the converter made to mangle foreign
+  numbers, and the minimum-length guard removed. The last of those was
+  caught by the mutation run rather than by the test as first written --
+  the short-fragment case had been passing for the wrong reason, and the
+  test now pins the length rule specifically.
 
-## Not in this PR
-
-The history rewrite of the published `main` (a pre-scrub name still
-carried by 14 of its commits) is a separate decision and is **not**
-touched here.
+Note: the statement of account's customer phone was not being escaped for
+reportlab markup (the invoice and quotation paths were). It is now, on
+the same line as the change.
