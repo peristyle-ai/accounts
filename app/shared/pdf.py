@@ -11,6 +11,7 @@ import pathlib
 import re
 
 from app.shared.address import render_address
+from app.shared.phone import format_phone_international
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
@@ -216,7 +217,7 @@ def generate_invoice_pdf(user, invoice):
     if user.contact_email:
         business_paragraphs.append(f'Email: {user.contact_email}')
     if user.contact_number:
-        business_paragraphs.append(f'Phone: {user.contact_number}')
+        business_paragraphs.append(f'Phone: {format_phone_international(user.contact_number)}')
 
     business_style = ParagraphStyle('Business', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT, leading=12)
     business_cell = [Paragraph('<br/>'.join(business_paragraphs), business_style)] if business_paragraphs else ['']
@@ -286,7 +287,7 @@ def generate_invoice_pdf(user, invoice):
     if invoice.customer.contact_email:
         customer_info += f"Email: {_esc(invoice.customer.contact_email)}<br/>"
     if invoice.customer.contact_number:
-        customer_info += f"Phone: {_esc(invoice.customer.contact_number)}<br/>"
+        customer_info += f"Phone: {_esc(format_phone_international(invoice.customer.contact_number))}<br/>"
     if invoice.customer.abn:
         customer_info += f"ABN: {_esc(invoice.customer.abn)}<br/>"
     elements.append(Paragraph(customer_info, styles['Normal']))
@@ -506,7 +507,7 @@ def generate_statement_of_account_pdf(user, customer, invoices, as_of_date):
     if user.contact_email:
         business_paragraphs.append(f'Email: {user.contact_email}')
     if user.contact_number:
-        business_paragraphs.append(f'Phone: {user.contact_number}')
+        business_paragraphs.append(f'Phone: {format_phone_international(user.contact_number)}')
 
     business_style = ParagraphStyle(
         'StmtBusiness', parent=styles['Normal'],
@@ -575,7 +576,7 @@ def generate_statement_of_account_pdf(user, customer, invoices, as_of_date):
     if customer.contact_email:
         customer_info += f"Email: {customer.contact_email}<br/>"
     if customer.contact_number:
-        customer_info += f"Phone: {customer.contact_number}<br/>"
+        customer_info += f"Phone: {_esc(format_phone_international(customer.contact_number))}<br/>"
     if customer.abn:
         customer_info += f"ABN: {customer.abn}<br/>"
     elements.append(Paragraph(customer_info, styles['Normal']))
@@ -1038,7 +1039,7 @@ def generate_quote_pdf(user, quote):
     if user.contact_email:
         business_paragraphs.append(f'Email: {user.contact_email}')
     if user.contact_number:
-        business_paragraphs.append(f'Phone: {user.contact_number}')
+        business_paragraphs.append(f'Phone: {format_phone_international(user.contact_number)}')
 
     business_style = ParagraphStyle('Business', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT, leading=12)
     business_cell = [Paragraph('<br/>'.join(business_paragraphs), business_style)] if business_paragraphs else ['']
@@ -1122,7 +1123,7 @@ def generate_quote_pdf(user, quote):
     if customer.contact_email:
         customer_info += f"Email: {_esc(customer.contact_email)}<br/>"
     if customer.contact_number:
-        customer_info += f"Phone: {_esc(customer.contact_number)}<br/>"
+        customer_info += f"Phone: {_esc(format_phone_international(customer.contact_number))}<br/>"
     if customer.abn:
         customer_info += f"ABN: {_esc(customer.abn)}<br/>"
     elements.append(Paragraph(customer_info, styles['Normal']))
