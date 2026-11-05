@@ -17,6 +17,21 @@ Columns:
     payment_terms     default 14 days
     api_key           Fernet ciphertext of the API key (used by
                       @api_key_required); use api_key_plain accessor
+    International payment details (added 2026-11-05). These are what a
+    bank OUTSIDE Australia needs to route a wire to this account: the
+    registered beneficiary name, the receiving branch's address, the
+    SWIFT/BIC code, and the business postal address the sending bank's
+    compliance checks are run against. They are NOT the same facts as
+    the domestic bank details above, and the document prints both.
+    international_account_name  the registered beneficiary name, as the
+                                receiving bank holds it (plaintext: the
+                                same class of value as account_name)
+    international_branch_address the receiving branch's address (plain)
+    international_swift_code      the SWIFT/BIC code (Fernet ciphertext,
+                                the international analogue of bsb; use
+                                the international_swift_code_plain accessor)
+    international_business_address the business postal address for
+                                international remittances (plain)
     created_at, updated_at
 """
 import hmac
@@ -50,6 +65,14 @@ class UserPaymentSettings(db.Model):
     de_user_id = db.Column(db.String(500), nullable=True)       # Fernet ciphertext
     payment_terms = db.Column(db.Integer, nullable=False, default=14)
     api_key = db.Column(db.String(500), nullable=True)          # Fernet ciphertext
+
+    # International (wire transfer) payment details. See the module
+    # docstring: these are separate from the domestic bank details
+    # because a bank abroad needs different facts.
+    international_account_name = db.Column(db.String(255), nullable=True)
+    international_branch_address = db.Column(db.String(500), nullable=True)
+    international_swift_code = db.Column(db.String(500), nullable=True)  # Fernet ciphertext
+    international_business_address = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=get_utc_now)
     updated_at = db.Column(
         db.DateTime(timezone=True), nullable=False, default=get_utc_now, onupdate=get_utc_now
@@ -118,6 +141,47 @@ class UserPaymentSettings(db.Model):
         return '••' + plain[-4:]
 
     @property
+    def international_swift_code_plain(self):
+        """Decrypted SWIFT/BIC code. None if not set.
+
+        Tolerant of a value that is not valid ciphertext (returns None
+        rather than raising): this sits on the document-rendering path,
+        where one unreadable row must not turn every invoice into a
+        500. The same posture as api_key_plain.
+        """
+        if not self.international_swift_code:
+            return None
+        try:
+            return decrypt_pii(self.international_swift_code)
+        except (InvalidToken, ValueError, TypeError):
+            return None
+
+    @international_swift_code_plain.setter
+    def international_swift_code_plain(self, value):
+        if value is None or value == '':
+            self.international_swift_code = None
+            return
+        self.international_swift_code = encrypt_pii(str(value).strip())
+
+    @property
+    def international_swift_code_masked(self):
+        """Masked SWIFT code for API responses, e.g. 'NATA••••••M'.
+
+        A BIC is 8 or 11 characters: four for the institution, two for
+        the country, two for the location, and an optional three for the
+        branch. The institution prefix is public and identifies WHICH
+        bank it is; the rest is not, so it is masked.
+        """
+        plain = self.international_swift_code_plain
+        if not plain:
+            return None
+        plain = str(plain).strip()
+        bullet = '\u2022'
+        if len(plain) <= 4:
+            return bullet * len(plain)
+        return plain[:4] + bullet * (len(plain) - 5) + plain[-1]
+
+    @property
     def api_key_plain(self):
         """Plaintext API key, or None if there is not a usable one.
 
@@ -183,6 +247,10 @@ class UserPaymentSettings(db.Model):
                 'account_number': mask_account(self.account_number_plain),
                 'bsb': mask_bsb(self.bsb_plain),
                 'de_user_id': self.de_user_id_masked,
+                'international_account_name': self.international_account_name,
+                'international_branch_address': self.international_branch_address,
+                'international_swift_code': self.international_swift_code_masked,
+                'international_business_address': self.international_business_address,
                 'payment_terms': self.payment_terms,
                 'api_key_set': bool(self.api_key),
                 'created_at': self.created_at.isoformat() if self.created_at else None,
@@ -195,6 +263,10 @@ class UserPaymentSettings(db.Model):
             'account_number': self.account_number_plain,
             'bsb': self.bsb_plain,
             'de_user_id': self.de_user_id_plain,
+            'international_account_name': self.international_account_name,
+            'international_branch_address': self.international_branch_address,
+            'international_swift_code': self.international_swift_code_plain,
+            'international_business_address': self.international_business_address,
             'payment_terms': self.payment_terms,
             'api_key': self.api_key_plain,
             'created_at': self.created_at.isoformat() if self.created_at else None,

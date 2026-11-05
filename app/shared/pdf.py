@@ -11,6 +11,7 @@ import pathlib
 import re
 
 from app.shared.address import render_address
+from app.shared.payments import international_payment_lines, needs_international_details
 from app.shared.phone import format_phone_international
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -411,6 +412,27 @@ def generate_invoice_pdf(user, invoice):
             bank_details.append(f'Account Number: {user.account_number_plain}')
         elements.append(Paragraph('<br/>'.join(bank_details), styles['Normal']))
 
+    # International payment details. Printed ONLY for a recipient outside
+    # Australia, and only when the tenant has configured them (the SWIFT
+    # code is the marker that they exist at all).
+    #
+    # The block is SEPARATE from the Bank Details block above, and both
+    # are printed. They answer different questions: Bank Details is how
+    # to pay from inside Australia; this is how to pay from outside it.
+    # A bank abroad cannot route the payment from a BSB alone.
+    if needs_international_details(invoice.customer):
+        intl_lines = international_payment_lines(user)
+        if intl_lines:
+            elements.append(Spacer(1, 0.7*cm))
+            elements.append(Paragraph(
+                '<b>International Payment Details:</b>', styles['Heading3']))
+            elements.append(Paragraph(
+                '<br/>'.join(
+                    f'{label}: {_esc(value)}' for label, value in intl_lines
+                ),
+                styles['Normal'],
+            ))
+
     doc.build(elements)
     buffer.seek(0)
     return buffer
@@ -782,6 +804,25 @@ def generate_statement_of_account_pdf(user, customer, invoices, as_of_date):
                 'BankLine', parent=styles['Normal'], fontSize=9, leading=11,
             )
             elements.append(Paragraph(' &nbsp;|&nbsp; '.join(bank_bits), bank_style))
+
+        # International payment details -- the same block the invoice
+        # carries. A statement of account asks for money just as an
+        # invoice does, so a recipient outside Australia needs the same
+        # wire instructions to pay it.
+        if needs_international_details(customer):
+            intl_lines = international_payment_lines(user)
+            if intl_lines:
+                elements.append(Spacer(1, 0.2*cm))
+                elements.append(Paragraph(
+                    '<font size="10" color="#2c3e50"><b>International Payment Details</b></font>',
+                    styles['Normal'],
+                ))
+                elements.append(Paragraph(
+                    '<br/>'.join(
+                        f'{label}: {_esc(value)}' for label, value in intl_lines
+                    ),
+                    styles['Normal'],
+                ))
 
         payment_terms = user.payment_terms if user.payment_terms else 14
         elements.append(Spacer(1, 0.2*cm))

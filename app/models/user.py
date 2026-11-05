@@ -329,6 +329,54 @@ class User(UserMixin, db.Model):
         self.payment_settings.bsb_plain = value
 
     @property
+    def international_account_name(self):
+        return self.payment_settings.international_account_name if self.payment_settings else None
+
+    @international_account_name.setter
+    def international_account_name(self, value):
+        self._ensure_payment_settings()
+        self.payment_settings.international_account_name = value
+
+    @property
+    def international_branch_address(self):
+        return self.payment_settings.international_branch_address if self.payment_settings else None
+
+    @international_branch_address.setter
+    def international_branch_address(self, value):
+        self._ensure_payment_settings()
+        self.payment_settings.international_branch_address = value
+
+    @property
+    def international_swift_code(self):
+        """Fernet ciphertext. Use international_swift_code_plain to read."""
+        return self.payment_settings.international_swift_code if self.payment_settings else None
+
+    @international_swift_code.setter
+    def international_swift_code(self, value):
+        self._ensure_payment_settings()
+        self.payment_settings.international_swift_code = value
+
+    @property
+    def international_swift_code_plain(self):
+        if not self.payment_settings:
+            return None
+        return self.payment_settings.international_swift_code_plain
+
+    @international_swift_code_plain.setter
+    def international_swift_code_plain(self, value):
+        self._ensure_payment_settings()
+        self.payment_settings.international_swift_code_plain = value
+
+    @property
+    def international_business_address(self):
+        return self.payment_settings.international_business_address if self.payment_settings else None
+
+    @international_business_address.setter
+    def international_business_address(self, value):
+        self._ensure_payment_settings()
+        self.payment_settings.international_business_address = value
+
+    @property
     def de_user_id(self):
         return self.payment_settings.de_user_id if self.payment_settings else None
 
@@ -401,6 +449,13 @@ class User(UserMixin, db.Model):
             'account_number': mask_account(self.account_number_plain),
             'bsb': mask_bsb(self.bsb_plain),
             'de_user_id': self.de_user_id_masked,
+            'international_account_name': self.international_account_name,
+            'international_branch_address': self.international_branch_address,
+            'international_swift_code': (
+                self.payment_settings.international_swift_code_masked
+                if self.payment_settings else None
+            ),
+            'international_business_address': self.international_business_address,
             'payment_terms': self.payment_terms,
             'api_key_set': bool(self.payment_settings and self.payment_settings.api_key),
             'created_at': self.created_at.isoformat() if self.created_at else None,

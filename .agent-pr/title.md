@@ -1,1 +1,1 @@
-feat(pdf): phone numbers on customer documents become international
+feat(pdf): international payment details on documents sent overseas
