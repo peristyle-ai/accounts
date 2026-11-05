@@ -11,7 +11,11 @@ import pathlib
 import re
 
 from app.shared.address import render_address
-from app.shared.payments import international_payment_lines, needs_international_details
+from app.shared.payments import (
+    account_title,
+    international_payment_lines,
+    needs_international_details,
+)
 from app.shared.phone import format_phone_international
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -398,14 +402,21 @@ def generate_invoice_pdf(user, invoice):
             styles['Normal']
         ))
 
-    if user.bank_name or user.account_name or user.account_number_plain or user.bsb_plain:
+    # The account NAME on a document is the title the RECEIVING bank
+    # holds for the account -- one account, one title. It is not the
+    # tenant's trading name, and it is not the payroll ABA's payer
+    # name: that file has a 26-character field and a 16-character
+    # remitter field, and the title does not fit either. See
+    # app.shared.payments.account_title.
+    title = account_title(user)
+    if user.bank_name or title or user.account_number_plain or user.bsb_plain:
         elements.append(Spacer(1, 0.7*cm))
         elements.append(Paragraph('<b>Bank Details:</b>', styles['Heading3']))
         bank_details = []
         if user.bank_name:
             bank_details.append(f'Bank: {user.bank_name}')
-        if user.account_name:
-            bank_details.append(f'Account Name: {user.account_name}')
+        if title:
+            bank_details.append(f'Account Name: {_esc(title)}')
         if user.bsb_plain:
             bank_details.append(f'BSB: {user.bsb_plain}')
         if user.account_number_plain:
@@ -785,7 +796,8 @@ def generate_statement_of_account_pdf(user, customer, invoices, as_of_date):
 
     # ---- bank details + payment terms ------------------------------------
     if outstanding > 0:
-        if user.bank_name or user.account_name or user.account_number_plain or user.bsb_plain:
+        title = account_title(user)
+        if user.bank_name or title or user.account_number_plain or user.bsb_plain:
             # Render inline so it flows naturally across page breaks if needed.
             elements.append(Paragraph(
                 '<font size="10" color="#2c3e50"><b>Payment details</b></font>',
@@ -794,8 +806,8 @@ def generate_statement_of_account_pdf(user, customer, invoices, as_of_date):
             bank_bits = []
             if user.bank_name:
                 bank_bits.append(f"<b>Bank:</b> {user.bank_name}")
-            if user.account_name:
-                bank_bits.append(f"<b>Account name:</b> {user.account_name}")
+            if title:
+                bank_bits.append(f"<b>Account name:</b> {_esc(title)}")
             if user.bsb_plain:
                 bank_bits.append(f"<b>BSB:</b> {user.bsb_plain}")
             if user.account_number_plain:

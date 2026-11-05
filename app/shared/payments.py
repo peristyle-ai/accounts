@@ -16,14 +16,18 @@ sending bank's compliance checks are run against).
 
 Two things are deliberately SEPARATE here and must not be merged:
 
-  * the DOMESTIC account name (the trading name on the invoice) and
-    the INTERNATIONAL beneficiary name (the registered holder). They
-    are not the same string, and conflating them would either print
-    the wrong name for a wire or the wrong name for a local transfer.
-  * the BUSINESS POSTAL ADDRESS (the address the sending bank checks)
-    and the address in the document header (where the business
-    operates from). These are also not the same thing, and for a wire
-    it is the bank's copy that matters.
+  * the REGISTERED BUSINESS ADDRESS (the address the sending bank
+    checks) and the address in the document header (where the business
+    operates from). These are not the same thing, and for a wire it is
+    the bank's copy that matters.
+  * the stored ACCOUNT NAME and the ACCOUNT TITLE a document prints.
+    The stored one is what the payroll ABA files carry as the payer
+    name, in a field too short for the registered title; the printed
+    one is the title the receiving bank holds. See account_title().
+
+The ACCOUNT NAME a document prints is the registered title, in BOTH
+payment blocks: one account has one title, and a document that gives
+the payer two names for it gives two answers.
 
 The values live in the DATABASE (accounts.user_payment_settings), not
 in this repository: the repository is PUBLIC, and a SWIFT code, a
@@ -50,6 +54,51 @@ def needs_international_details(customer):
     intended.
     """
     return is_overseas(customer)
+
+
+def registered_account_title(user):
+    """The registered account title, or '' when the tenant has none.
+
+    This is the name the RECEIVING bank holds for the account -- the
+    exact string on its record. It is what a wire must quote, and a
+    name that differs from the bank's is a common cause of a returned
+    payment.
+
+    Read from the payment settings, and from the User model as a
+    fallback so the helper works with the plain objects the tests
+    build.
+    """
+    settings = getattr(user, 'payment_settings', None)
+    if settings is not None:
+        registered = (getattr(settings, 'international_account_name', None)
+                      or '').strip()
+        if registered:
+            return registered
+    return (getattr(user, 'international_account_name', None) or '').strip()
+
+
+def account_title(user):
+    """The account title a customer-facing document prints.
+
+    ONE account has ONE title. So a document that prints a DIFFERENT
+    name (the trading name) in its domestic block and the registered
+    one in its international block gives the payer two answers for one
+    account, and where the payer's bank matches on name, a rejected
+    payment.
+
+    So the document prints the registered title whenever the tenant has
+    configured one, and the stored account name otherwise.
+
+    NOT the ABA payer name, and that is deliberate. The payroll files
+    carry the payer's name in a 26-character field, and the remitter
+    name in a 16-character one; the registered title is longer than
+    both and would be cut mid-word in a file the bank has already
+    accepted. A change to the ACCOUNT NAME on a document must not move
+    the payroll artefacts. The test that pins this is in
+    tests/test_account_title.py.
+    """
+    return registered_account_title(user) or (
+        (getattr(user, 'account_name', None) or '').strip())
 
 
 def international_payment_lines(user):
@@ -81,10 +130,10 @@ def international_payment_lines(user):
     # unchanged.
     lines = []
     for label, value in (
-        ('Account Name', settings.international_account_name),
+        ('Account Name', registered_account_title(user)),
         ('Branch ' 'Address', settings.international_branch_address),
         ('Swift ' 'Code', swift_code),
-        ('Business Postal Address', settings.international_business_address),
+        ('Registered Business Address', settings.international_business_address),
     ):
         value = (value or '').strip()
         if value:

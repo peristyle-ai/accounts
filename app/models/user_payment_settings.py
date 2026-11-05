@@ -30,8 +30,11 @@ Columns:
     international_swift_code      the SWIFT/BIC code (Fernet ciphertext,
                                 the international analogue of bsb; use
                                 the international_swift_code_plain accessor)
-    international_business_address the business postal address for
-                                international remittances (plain)
+    international_business_address the REGISTERED business address for
+                                international remittances -- the address
+                                the sending bank checks, which is not
+                                the address in the document header
+                                (plain)
     created_at, updated_at
 """
 import hmac

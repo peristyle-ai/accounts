@@ -1,1 +1,1 @@
-feat(pdf): international payment details on documents sent overseas
+feat(pdf): one account title, and registered business address, on customer documents

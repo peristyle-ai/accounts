@@ -248,13 +248,20 @@ def test_a_partial_configuration_renders_nothing():
 
 
 # ---------------------------------------------------------------------
-# 5: the domestic and international account names are different facts
+# 5: the stored names stay separate facts
 # ---------------------------------------------------------------------
 
 def test_the_international_name_does_not_overwrite_the_domestic_one():
-    """A wire quoting the trading name instead of the registered one is
-    rejected by the receiving bank. The two names are different facts
-    and must not be merged."""
+    """The two STORED names are different facts and neither overwrites
+    the other.
+
+    (What a document PRINTS is a separate question, answered by
+    app.shared.payments.account_title and pinned in
+    tests/test_account_title.py: one account has one title, and it is
+    the title the receiving bank holds. The stored account name is
+    what the payroll ABA files carry as the payer name, and that must
+    not move because a document changed.)
+    """
     user = _business_user()
     user.account_name = DOMESTIC_NAME
 
@@ -262,10 +269,15 @@ def test_the_international_name_does_not_overwrite_the_domestic_one():
     text = extract_text(pdf.getvalue())
 
     assert ACCOUNT_NAME in text, "the registered name is missing"
-    assert DOMESTIC_NAME in text, "the domestic name is missing"
-    # The domestic name is printed under Bank Details, the registered
-    # one under International Payment Details -- both present, neither
-    # substituted for the other.
+    # Asserted on the Bank Details block, not on the whole document:
+    # DOMESTIC_NAME is this tenant's BUSINESS name, which the header
+    # prints on every document, so searching the whole text would
+    # pass whether or not the account name was right.
+    domestic = text.split('Bank Details:')[1].split(
+        'International Payment Details:')[0]
+    assert f'Account Name: {DOMESTIC_NAME}' not in domestic, (
+        "the domestic block still prints the trading name as the "
+        "account name")
     assert user.account_name == DOMESTIC_NAME, "the stored domestic name was rewritten"
 
 
