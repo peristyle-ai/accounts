@@ -11,6 +11,12 @@ import pathlib
 import re
 
 from app.shared.address import render_address
+from app.shared.payments import (
+    account_title,
+    international_payment_lines,
+    needs_international_details,
+)
+from app.shared.phone import format_phone_international
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
@@ -216,7 +222,7 @@ def generate_invoice_pdf(user, invoice):
     if user.contact_email:
         business_paragraphs.append(f'Email: {user.contact_email}')
     if user.contact_number:
-        business_paragraphs.append(f'Phone: {user.contact_number}')
+        business_paragraphs.append(f'Phone: {format_phone_international(user.contact_number)}')
 
     business_style = ParagraphStyle('Business', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT, leading=12)
     business_cell = [Paragraph('<br/>'.join(business_paragraphs), business_style)] if business_paragraphs else ['']
@@ -286,7 +292,7 @@ def generate_invoice_pdf(user, invoice):
     if invoice.customer.contact_email:
         customer_info += f"Email: {_esc(invoice.customer.contact_email)}<br/>"
     if invoice.customer.contact_number:
-        customer_info += f"Phone: {_esc(invoice.customer.contact_number)}<br/>"
+        customer_info += f"Phone: {_esc(format_phone_international(invoice.customer.contact_number))}<br/>"
     if invoice.customer.abn:
         customer_info += f"ABN: {_esc(invoice.customer.abn)}<br/>"
     elements.append(Paragraph(customer_info, styles['Normal']))
@@ -396,19 +402,47 @@ def generate_invoice_pdf(user, invoice):
             styles['Normal']
         ))
 
-    if user.bank_name or user.account_name or user.account_number_plain or user.bsb_plain:
+    # The account NAME on a document is the title the RECEIVING bank
+    # holds for the account -- one account, one title. It is not the
+    # tenant's trading name, and it is not the payroll ABA's payer
+    # name: that file has a 26-character field and a 16-character
+    # remitter field, and the title does not fit either. See
+    # app.shared.payments.account_title.
+    title = account_title(user)
+    if user.bank_name or title or user.account_number_plain or user.bsb_plain:
         elements.append(Spacer(1, 0.7*cm))
         elements.append(Paragraph('<b>Bank Details:</b>', styles['Heading3']))
         bank_details = []
         if user.bank_name:
             bank_details.append(f'Bank: {user.bank_name}')
-        if user.account_name:
-            bank_details.append(f'Account Name: {user.account_name}')
+        if title:
+            bank_details.append(f'Account Name: {_esc(title)}')
         if user.bsb_plain:
             bank_details.append(f'BSB: {user.bsb_plain}')
         if user.account_number_plain:
             bank_details.append(f'Account Number: {user.account_number_plain}')
         elements.append(Paragraph('<br/>'.join(bank_details), styles['Normal']))
+
+    # International payment details. Printed ONLY for a recipient outside
+    # Australia, and only when the tenant has configured them (the SWIFT
+    # code is the marker that they exist at all).
+    #
+    # The block is SEPARATE from the Bank Details block above, and both
+    # are printed. They answer different questions: Bank Details is how
+    # to pay from inside Australia; this is how to pay from outside it.
+    # A bank abroad cannot route the payment from a BSB alone.
+    if needs_international_details(invoice.customer):
+        intl_lines = international_payment_lines(user)
+        if intl_lines:
+            elements.append(Spacer(1, 0.7*cm))
+            elements.append(Paragraph(
+                '<b>International Payment Details:</b>', styles['Heading3']))
+            elements.append(Paragraph(
+                '<br/>'.join(
+                    f'{label}: {_esc(value)}' for label, value in intl_lines
+                ),
+                styles['Normal'],
+            ))
 
     doc.build(elements)
     buffer.seek(0)
@@ -506,7 +540,7 @@ def generate_statement_of_account_pdf(user, customer, invoices, as_of_date):
     if user.contact_email:
         business_paragraphs.append(f'Email: {user.contact_email}')
     if user.contact_number:
-        business_paragraphs.append(f'Phone: {user.contact_number}')
+        business_paragraphs.append(f'Phone: {format_phone_international(user.contact_number)}')
 
     business_style = ParagraphStyle(
         'StmtBusiness', parent=styles['Normal'],
@@ -575,7 +609,7 @@ def generate_statement_of_account_pdf(user, customer, invoices, as_of_date):
     if customer.contact_email:
         customer_info += f"Email: {customer.contact_email}<br/>"
     if customer.contact_number:
-        customer_info += f"Phone: {customer.contact_number}<br/>"
+        customer_info += f"Phone: {_esc(format_phone_international(customer.contact_number))}<br/>"
     if customer.abn:
         customer_info += f"ABN: {customer.abn}<br/>"
     elements.append(Paragraph(customer_info, styles['Normal']))
@@ -762,7 +796,8 @@ def generate_statement_of_account_pdf(user, customer, invoices, as_of_date):
 
     # ---- bank details + payment terms ------------------------------------
     if outstanding > 0:
-        if user.bank_name or user.account_name or user.account_number_plain or user.bsb_plain:
+        title = account_title(user)
+        if user.bank_name or title or user.account_number_plain or user.bsb_plain:
             # Render inline so it flows naturally across page breaks if needed.
             elements.append(Paragraph(
                 '<font size="10" color="#2c3e50"><b>Payment details</b></font>',
@@ -771,8 +806,8 @@ def generate_statement_of_account_pdf(user, customer, invoices, as_of_date):
             bank_bits = []
             if user.bank_name:
                 bank_bits.append(f"<b>Bank:</b> {user.bank_name}")
-            if user.account_name:
-                bank_bits.append(f"<b>Account name:</b> {user.account_name}")
+            if title:
+                bank_bits.append(f"<b>Account name:</b> {_esc(title)}")
             if user.bsb_plain:
                 bank_bits.append(f"<b>BSB:</b> {user.bsb_plain}")
             if user.account_number_plain:
@@ -781,6 +816,25 @@ def generate_statement_of_account_pdf(user, customer, invoices, as_of_date):
                 'BankLine', parent=styles['Normal'], fontSize=9, leading=11,
             )
             elements.append(Paragraph(' &nbsp;|&nbsp; '.join(bank_bits), bank_style))
+
+        # International payment details -- the same block the invoice
+        # carries. A statement of account asks for money just as an
+        # invoice does, so a recipient outside Australia needs the same
+        # wire instructions to pay it.
+        if needs_international_details(customer):
+            intl_lines = international_payment_lines(user)
+            if intl_lines:
+                elements.append(Spacer(1, 0.2*cm))
+                elements.append(Paragraph(
+                    '<font size="10" color="#2c3e50"><b>International Payment Details</b></font>',
+                    styles['Normal'],
+                ))
+                elements.append(Paragraph(
+                    '<br/>'.join(
+                        f'{label}: {_esc(value)}' for label, value in intl_lines
+                    ),
+                    styles['Normal'],
+                ))
 
         payment_terms = user.payment_terms if user.payment_terms else 14
         elements.append(Spacer(1, 0.2*cm))
@@ -1038,7 +1092,7 @@ def generate_quote_pdf(user, quote):
     if user.contact_email:
         business_paragraphs.append(f'Email: {user.contact_email}')
     if user.contact_number:
-        business_paragraphs.append(f'Phone: {user.contact_number}')
+        business_paragraphs.append(f'Phone: {format_phone_international(user.contact_number)}')
 
     business_style = ParagraphStyle('Business', parent=styles['Normal'], fontSize=9, alignment=TA_RIGHT, leading=12)
     business_cell = [Paragraph('<br/>'.join(business_paragraphs), business_style)] if business_paragraphs else ['']
@@ -1122,7 +1176,7 @@ def generate_quote_pdf(user, quote):
     if customer.contact_email:
         customer_info += f"Email: {_esc(customer.contact_email)}<br/>"
     if customer.contact_number:
-        customer_info += f"Phone: {_esc(customer.contact_number)}<br/>"
+        customer_info += f"Phone: {_esc(format_phone_international(customer.contact_number))}<br/>"
     if customer.abn:
         customer_info += f"ABN: {_esc(customer.abn)}<br/>"
     elements.append(Paragraph(customer_info, styles['Normal']))

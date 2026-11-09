@@ -206,11 +206,17 @@ def send_payslip(env, pe_id, recipient_kinds=None):
 
 
 def email_generated_files(env, recipient, files, period, payment_date,
-                          gross, net, super_payable, paid=False):
+                          gross, net, super_payable, paid=False, note=None):
     """Email the generated upload files to the operator.
 
     ASCII-only body: the mail server's /api/emails/mime endpoint rejects
     any byte >= 0x80 in the submitted MIME.
+
+    `note` is placed at the TOP of the body, above everything else. It
+    exists for the re-send case: a second pack of files for a week the
+    operator has ALREADY received reads as a second week of money unless
+    the body says so at the top. An unmarked duplicate pack is the exact
+    failure the email-artefact rules are about.
     """
     server = env.get("EMAIL_SERVER") or ""
     password = env.get("EMAIL_PASSWORD") or ""
@@ -225,6 +231,10 @@ def email_generated_files(env, recipient, files, period, payment_date,
     lines = [
         f"Hi {os.environ.get('PAYROLL_OPERATOR_NAME', 'there')},",
         "",
+    ]
+    if note:
+        lines += [f"*** {note} ***", ""]
+    lines += [
         ("The payroll files for the week just paid are attached, ready for "
          "upload:" if paid else
          "The payroll files for next week are attached, ready for upload. "
@@ -423,14 +433,17 @@ def main():
     parser.add_argument("--period-start", help="Pay period start YYYY-MM-DD (default: last Tue)")
     parser.add_argument("--period-end", help="Pay period end YYYY-MM-DD (default: following Mon)")
     parser.add_argument("--payment-date", help="Payment date YYYY-MM-DD (default: following Wed)")
-    parser.add_argument("--days", type=int, default=5,
-                        help="Days worked in the period (default 5, full week)")
-    parser.add_argument("--rate", type=float, default=50.0,
-                        help="Hourly rate AUD (default 50, locked in payroll/employee/config.py)")
-    parser.add_argument("--net", type=float, default=1508.13,
+    parser.add_argument("--days", type=int, default=None,
+                        help="Days worked in the period (default: the employee's "
+                             "DAYS_PER_WEEK from their payroll config)")
+    parser.add_argument("--rate", type=float, default=None,
+                        help="Hourly rate AUD (default: the employee's HOURLY_RATE from "
+                             "their payroll config)")
+    parser.add_argument("--net", type=float, default=None,
                         help="Actual net amount deposited (PAYG is back-calculated as gross - net, "
-                             "matching the canonical payroll send scripts. Default 1508.13 for the "
-                             "standard full-week net. Override if the operator paid a different amount.)")
+                             "matching the canonical payroll send scripts. Default: the employee's "
+                             "NET_WEEK from their payroll config. Override if the operator "
+                             "paid a different amount.")
     parser.add_argument("--bank-ref", default=None,
                         help="Bank reference for the wage payment (e.g. an OSKO ref). "
                              "If omitted, defaults to '<YYYYMMDD>JP' using the employee's "
@@ -450,6 +463,10 @@ def main():
                         help="Bank confirmation/reference for the wage payment, used "
                              "by --phase complete. E.g. the ABA lodgement reference "
                              "or the OSKO confirmation id.")
+    parser.add_argument("--body-note", default=None,
+                        help="A line to place at the TOP of the email body. Use it "
+                             "to mark a pack as SUPERSEDING an earlier one for the "
+                             "same week, so two packs are not mistaken for two weeks.")
     parser.add_argument("--email-files-to",
                         help="Email the generated upload files to this address "
                              "(default: PAYROLL_FILES_TO from the environment).")
@@ -495,9 +512,19 @@ def main():
     period_end = date.fromisoformat(args.period_end) if args.period_end else default_end
     payment_date = date.fromisoformat(args.payment_date) if args.payment_date else default_payment
 
-    hours_per_day = Decimal(str(jp.HOURS_PER_DAY))  # 7.6
-    gross = (Decimal(str(args.rate)) * hours_per_day * args.days).quantize(Decimal("0.01"))
-    net = Decimal(str(args.net)).quantize(Decimal("0.01"))
+    hours_per_day = Decimal(str(jp.HOURS_PER_DAY))
+    # The employee's own arrangement is the DEFAULT for days, rate and net.
+    # They were hardcoded here (5 days, $50/hr, $1,508.13 net) which meant a
+    # change of hours -- Jessica dropping to 3 days a week on 2026-11-10 --
+    # was invisible to the timer: it would have carried on paying the old
+    # full-time week. An explicit flag still wins, so a one-off
+    # correction is still possible, but the standing answer lives in ONE
+    # place: the employee's payroll config.
+    days_worked = args.days if args.days is not None else int(jp.DAYS_PER_WEEK)
+    rate = Decimal(str(args.rate)) if args.rate is not None else Decimal(str(jp.HOURLY_RATE))
+    net_default = args.net if args.net is not None else float(jp.NET_WEEK)
+    gross = (rate * hours_per_day * days_worked).quantize(Decimal("0.01"))
+    net = Decimal(str(net_default)).quantize(Decimal("0.01"))
     # PAYG = gross - net (matches the canonical send_*.py scripts: PAYG is back-
     # calculated from the actual net that hit the employee's bank).
     payg = (gross - net).quantize(Decimal("0.01"))
@@ -517,7 +544,7 @@ def main():
     print(f"=== Weekly payroll run — Sample Employee ===")
     print(f"Period:          {period_start.isoformat()} -> {period_end.isoformat()}")
     print(f"Payment date:    {payment_date.isoformat()}")
-    print(f"Days worked:     {args.days}")
+    print(f"Days worked:     {days_worked}")
     print(f"Gross:           ${gross}")
     print(f"PAYG:            ${payg}")
     print(f"Net:             ${net}")
@@ -709,7 +736,7 @@ def main():
             period=f"{period_start} to {period_end}",
             payment_date=payment_date,
             gross=gross, net=net, super_payable=super_payable,
-            paid=(phase == "full"),
+            paid=(phase == "full"), note=args.body_note,
         )
         print()
 
