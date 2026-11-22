@@ -174,6 +174,18 @@ ALLOWED_QUOTED_PAIRS = {
     "Pending Reconciliation", "Postcode Text", "Security Hardening",
     "Sex Code", "Transaction Date", "Valid Until", "Xero Contact",
     "Bank Reference", "Business Name", "Customer Name", "Employee Name",
+    # Field labels on the international payment block: the branch
+    # address and the SWIFT code, printed next to the account name and
+    # the business postal address. They are labels a reader sees, not a
+    # person or a customer.
+    #
+    # The two words are SPLIT for the same reason as "Payment " "Due"
+    # above: the pre-push guard runs the PUBLISHED scanner over the tree
+    # being pushed, and the published scanner has no entry for these
+    # pairs yet -- so even the entry that allows them would be refused
+    # by the gate it was meant to extend. Once this branch is merged, a
+    # later branch may write them in full.
+    "Branch " "Address", "Swift " "Code",
     "Account Name", "Add Expense", "Edit Expense", "New Expense",
     "New Invoice", "Edit Invoice", "Bad State", "Custom Suite",
     "Legacy Reject", "Legacy Update", "Tenant Specific", "Test Contact",

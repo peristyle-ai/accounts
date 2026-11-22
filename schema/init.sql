@@ -100,6 +100,13 @@ CREATE TABLE IF NOT EXISTS user_payment_settings (
     de_user_id     VARCHAR(500),  -- Fernet ciphertext (NAB DE Credit User ID)
     payment_terms  INTEGER NOT NULL DEFAULT 14,
     api_key        VARCHAR(500),  -- Fernet ciphertext
+    -- International (wire transfer) payment details: what a bank OUTSIDE
+    -- Australia needs to route a wire to this account. Separate from the
+    -- domestic bank details above, because they are different facts.
+    international_account_name   VARCHAR(255),
+    international_branch_address VARCHAR(500),
+    international_swift_code      VARCHAR(500),  -- Fernet ciphertext
+    international_business_address VARCHAR(500),
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -853,6 +860,29 @@ CREATE TRIGGER update_payee_directory_updated_at
 -- to this same value as the "OSID" (Originator Short IDentifier). If you
 -- ever call NAB support and they ask for the "OSID", this column is it.
 ALTER TABLE user_payment_settings ADD COLUMN IF NOT EXISTS de_user_id VARCHAR(500);
+
+-- ===================== user_payment_settings: international =========
+-- Added 2026-11-05 -- what a bank outside Australia needs to route a
+-- wire to this account: the registered beneficiary name, the receiving
+-- branch's address, the SWIFT/BIC code, and the business postal address
+-- the sending bank's compliance checks are run against.
+--
+-- These are SEPARATE from the domestic bank details on purpose. The
+-- domestic account name is the trading name on the invoice; the
+-- international one is the name the RECEIVING bank holds, and a wire
+-- quoting the wrong one is returned. Same for the business postal
+-- address: the address in the document header is where the business
+-- operates from, and this one is what the sending bank checks.
+--
+-- The SWIFT code is Fernet-encrypted at rest, the same treatment the
+-- BSB gets: it identifies the account to the receiving bank. The names
+-- and addresses are plaintext, the same class of value as account_name
+-- and the business address.
+
+ALTER TABLE user_payment_settings ADD COLUMN IF NOT EXISTS international_account_name VARCHAR(255);
+ALTER TABLE user_payment_settings ADD COLUMN IF NOT EXISTS international_branch_address VARCHAR(500);
+ALTER TABLE user_payment_settings ADD COLUMN IF NOT EXISTS international_swift_code VARCHAR(500);
+ALTER TABLE user_payment_settings ADD COLUMN IF NOT EXISTS international_business_address VARCHAR(500);
 
 COMMENT ON COLUMN user_payment_settings.de_user_id IS
     'Fernet ciphertext. NAB-issued 6-digit Direct Entry Credit User ID (also known as OSID/Originator Short IDentifier in NAB terminology), embedded in ABA file header positions 57-62. Decrypt via the de_user_id_plain accessor. NULL until the user supplies the real ID from their NAB Connect onboarding email.';

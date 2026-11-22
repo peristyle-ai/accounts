@@ -1,1 +1,1 @@
-fix(tests): the suite must not leave residue in the LIVE database
+fix(expenses): POST /api/expenses no longer 500s on every call

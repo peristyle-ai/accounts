@@ -1,89 +1,57 @@
 ## What
 
-The accounts test suite runs against **live production Postgres** — there
-is no test database. So a row a test creates and does not delete is a row
-in the business's ledger, visible in the customer list and the invoice
-list.
+`POST /api/expenses` answered **HTTP 500 on every call**, on `main` as
+well as on every open branch.
 
-It happened. **1,029 junk customers and 8 junk invoices** had accumulated
-in production from the address-refactor and invoice-tax suites. The
-production business address was also overwritten with a **test
-placeholder** — twice, on 2026-11-02 and 2026-11-03 — and **the tests
-passed both times**. (The placeholder is the fixture's own fake street
-address; it is not written out here, because this repository is public.)
+The route has passed `project_code` / `project_name` / `attachment_sha256`
+to the `Expense` constructor since 2026-09-24 and 2026-09-25. The ORM
+model never grew those attributes and **no migration ever created the
+columns**, so SQLAlchemy rejected the unmapped kwargs:
 
-## The three changes
+```
+TypeError: 'project_code' is an invalid keyword argument for Expense
+```
 
-| file | change |
-|---|---|
-| `tests/conftest.py` | `restore_user` also snapshots and restores the **profile** row; a session-scoped autouse guard sweeps residue; the guard **asserts** the business address is unchanged and fails the session loudly if it is not |
-| `tests/test_prod_residue_guard.py` | **new**: covers the guard's rules *and its safety property* |
+The route is the documented way to add an expense — the PWA's "add
+expense" button and the mail intake both POST to it — so this takes out
+expense creation for the whole installation, not just one caller.
 
-### 1. `restore_user` never reached the address
+## The fix
 
-The business ADDRESS lives in `accounts.user_profiles`, not in the `users`
-table: `User.address_line1` is a **property** that reads through the
-profile. So snapshotting `User.__table__.columns` snapshots *nothing* of
-the address, and a test that mutates it leaves production holding
-whatever the test wrote.
+- `app/models/expense.py` grows the three columns (nullable).
+- `schema/migrations/2026-11-23_add_expense_project_fields.sql` creates
+  them in the `accounts` schema (nullable, additive, idempotent).
 
-The fixture was introduced to stop exactly this corruption, and its own
-docstring describes it. It did not reach the address, because the address
-had already moved out of the table it snapshotted.
+The route is unchanged: it already validated and meant to store these
+fields, and nothing else in the app referenced them.
 
-### 2. A session-scoped guard, not per-test cleanup
+## Evidence
 
-The guard is **session-scoped and autouse**, so it runs for every test
-session — including one that runs a single file. A per-test cleanup is
-only as good as the tests that remembered to write one, and the leaking
-tests predate the rule.
+Found by running the mail intake against the live mailbox: ten
+`POST /api/expenses` calls, ten HTTP 500s. The store was read BEFORE
+retrying anything — the row count was unchanged, so the 500 meant "no
+write", not "a write that needs repeating".
 
-It recognises residue by the **test-name prefixes the suite uses**, never
-by a real customer's name, and it refuses to sweep anything that is not
-unmistakably a draft — a sent or paid invoice is business state whatever
-it is called. It also sweeps the audit rows that recorded the test
-writes (the log grew 164 rows per run, recording creations of rows that
-no longer exist), under a deliberately narrow rule: a log row goes only
-if the row it describes did not exist before this session **and** does not
-exist now — so a real business action taken during the session keeps its
-audit trail.
+After the migration was applied (against a `pg_dump` backup of the
+`accounts` schema) and the service restarted, the same ten calls created
+ten expenses, and the public `/health` returns 200.
 
-### 3. The guard asserts the address
+`tests/test_expense_create_route.py` pins it, and the check is
+**structural rather than a snapshot**: every kwarg the route passes to the
+constructor must be a mapped attribute of the model, so the next field
+added to the route fails the test until the model and the database grow
+to match. The defect was reintroduced and the tests were shown to fail
+(2 failed) before the fix was restored.
 
-The corruption passed twice because nothing checked. The guard compares
-the business address before and after the session and **fails the session
-loudly** if it changed.
+## Notes for review
 
-## Proven by mutation, not by inspection
-
-- **Neuter the residue matcher** → exactly **5 customers leaked into the
-  live database** during a normal run. The suite still passed. The guard
-  is what prevents the leak, which is why this needed proving.
-- **Disable the profile restore** → the guard's assertion fired with the
-  exact corruption (the fixture's placeholder address, city and postcode)
-  and failed the session.
-
-## The guard's own safety property is tested
-
-A guard that deletes real business data is worse than no guard. The tests
-assert that **no real customer and no real invoice** can be recognised as
-residue, and that a sent/paid invoice is never swept.
-
-The real names are read from the **live database at runtime**, not written
-here: this repository is **public**, and a hardcoded list of customer
-names in a tracked file is the same mistake this branch exists to prevent.
-Reading them live is also the stronger test — it covers every real
-customer, including any added later.
-
-## Verification
-
-- **496 passed, 2 skipped** on the deployed code (521 on the branch).
-- Production verified **unchanged** after a full run: 5 customers, 21
-  invoices, 3 quotes, business address intact.
-- The identifier gate and the secret scan are green on the branch.
-
-## Not in this PR
-
-The history rewrite of the published `main` (a pre-scrub name still
-carried by 14 of its commits) is a separate decision and is **not**
-touched here.
+- The migration is applied to the live database already. It is additive
+  and idempotent, so re-running it is a no-op.
+- `accounts.expenses` gains three nullable columns and two indexes; no
+  other table is touched.
+- This branch is stacked on `fix/payroll-reopen-remote-addr` (which is
+  itself stacked on the payroll and invoice branches), because the
+  production checkout is on that stack and the payroll timer runs from
+  the checkout. **Do not move the production checkout to `main` until
+  the payroll PR is merged** — `main` still carries the hardcoded
+  five-day payroll defaults.
