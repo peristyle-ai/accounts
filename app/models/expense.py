@@ -32,6 +32,17 @@ class Expense(db.Model):
     submitted_by = db.Column(db.String(120), nullable=True)
     submitted_phone = db.Column(db.String(32), nullable=True)
     submitted_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # 2026-11-23: the create route has accepted these three since 2026-09-24
+    # and 2026-09-25, but the model never grew the columns -- so
+    # POST /api/expenses answered HTTP 500 on EVERY call ("'project_code' is
+    # an invalid keyword argument for Expense"), because the route passes
+    # them to the constructor and SQLAlchemy rejects an unmapped kwarg.
+    # The route is the documented way to add an expense (the PWA's
+    # "add expense" button and the mail intake both use it), so the model
+    # and the database grow to match the route. All nullable.
+    project_code = db.Column(db.String(50), nullable=True, index=True)
+    project_name = db.Column(db.String(255), nullable=True)
+    attachment_sha256 = db.Column(db.String(64), nullable=True, index=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=get_utc_now)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=get_utc_now, onupdate=get_utc_now)
 
@@ -67,6 +78,9 @@ class Expense(db.Model):
             'submitted_by': self.submitted_by,
             'submitted_phone': self.submitted_phone,
             'submitted_at': self.submitted_at.isoformat() if self.submitted_at else None,
+            'project_code': self.project_code,
+            'project_name': self.project_name,
+            'attachment_sha256': self.attachment_sha256,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
