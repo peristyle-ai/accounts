@@ -1639,6 +1639,28 @@ def update_business_details():
         except (ValueError, TypeError):
             return jsonify({'error': 'payment_terms must be an integer'}), 400
 
+    # International (wire transfer) payment details. Set through the
+    # same business-details route as the domestic bank details, because
+    # they are the same kind of thing and a tenant setting one expects
+    # to set the other in the same place.
+    #
+    # The SWIFT code is stored Fernet-encrypted (the international
+    # analogue of the BSB), so it is accepted here as PLAINTEXT and
+    # encrypted on the way in -- exactly like `bsb` above.
+    for field in ('international_account_name',
+                  'international_branch_address',
+                  'international_business_address'):
+        if field in data:
+            value = data[field]
+            if value is not None and not isinstance(value, str):
+                return jsonify({'error': f'{field} must be a string'}), 400
+            setattr(user, field, value.strip() if isinstance(value, str) else value)
+    if 'international_swift_code' in data:
+        value = data['international_swift_code']
+        if value is not None and not isinstance(value, str):
+            return jsonify({'error': 'international_swift_code must be a string'}), 400
+        user.international_swift_code_plain = value.strip() if isinstance(value, str) else value
+
     log_activity(
         user_id=user.id,
         action='UPDATE',
