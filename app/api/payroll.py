@@ -752,12 +752,19 @@ def reopen_pay_event(pay_event_id):
 
     old_status = pe.status
     pe.status = 'draft'
-    db.session.commit()
+    # The activity row and the status change are committed TOGETHER.
+    # They used to be two separate commits with the log written second, so
+    # if logging raised, the row was already changed on disk but the
+    # endpoint answered 500 -- and the caller saw a refusal for an
+    # operation that had actually happened. One commit, then one answer.
     log_activity(
         user_id=user_id, action='UPDATE', table_name='pay_events',
         record_id=pe.id,
         new_values={'status': 'draft', 'previous_status': old_status},
-        ip_address=request.remote_address,
+        # Flask's Request exposes remote_addr. There is no remote_address
+        # attribute, so reading it raised AttributeError and turned every
+        # call to this route into a 500.
+        ip_address=request.remote_addr,
     )
     db.session.commit()
     return _ok({

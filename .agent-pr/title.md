@@ -1,1 +1,1 @@
-feat(pdf): one account title, and registered business address, on customer documents
+fix(payroll): the reopen route no longer 500s on every call
